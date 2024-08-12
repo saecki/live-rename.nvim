@@ -11,6 +11,18 @@
 Plug 'saecki/crates.nvim'
 ```
 
+## Setup (optional)
+```lua
+-- default config
+require("live-rename").setup({
+    request_timeout = 1500,
+    hl = {
+        current = "CurSearch",
+        others = "Search",
+    },
+})
+```
+
 ## Usage
 
 ```lua

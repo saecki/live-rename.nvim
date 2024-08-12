@@ -6,11 +6,17 @@ local extmark_ns = vim.api.nvim_create_namespace("user.util.input.extmark")
 local win_hl_ns = vim.api.nvim_create_namespace("user.util.input.win_hl")
 local buf_hl_ns = vim.api.nvim_create_namespace("user.util.input.buf_hl")
 
-local request_timeout = 1500
-local hl = {
-    current = "CurSearch",
-    others = "Search",
+local cfg = {
+    request_timeout = 1500,
+    hl = {
+        current = "CurSearch",
+        others = "Search",
+    },
 }
+
+function M.setup(user_cfg)
+    cfg = vim.tbl_deep_extend("force", cfg, user_cfg or {})
+end
 
 function M.map(opts)
     return function()
@@ -57,7 +63,7 @@ function M.rename(opts)
         if client.supports_method(lsp_methods.textDocument_references) then
             local params = vim.lsp.util.make_position_params(M.doc_win, client.offset_encoding)
             params.context = { includeDeclaration = true }
-            local resp = client.request_sync(lsp_methods.textDocument_references, params, request_timeout, M.doc_buf)
+            local resp = client.request_sync(lsp_methods.textDocument_references, params, cfg.request_timeout, M.doc_buf)
             if resp and resp.err == nil and resp.result then
                 ---@type lsp.Location[]
                 local locations = resp.result
@@ -92,7 +98,7 @@ function M.rename(opts)
     M.extmark_id = vim.api.nvim_buf_set_extmark(M.doc_buf, extmark_ns, M.line, M.col, {
         end_col = M.end_col,
         virt_text_pos = "inline",
-        virt_text = { { string.rep(" ", text_width), hl.current } },
+        virt_text = { { string.rep(" ", text_width), cfg.hl.current } },
         conceal = "",
     })
 
@@ -107,7 +113,7 @@ function M.rename(opts)
             local extmark_id = vim.api.nvim_buf_set_extmark(M.doc_buf, extmark_ns, line, start_col, {
                 end_col = end_col,
                 virt_text_pos = "inline",
-                virt_text = { { text, hl.others } },
+                virt_text = { { text, cfg.hl.others } },
                 conceal = "",
             })
 
@@ -182,7 +188,7 @@ function M.update()
         id = M.extmark_id,
         end_col = M.end_col,
         virt_text_pos = "inline",
-        virt_text = { { string.rep(" ", text_width), hl.current } },
+        virt_text = { { string.rep(" ", text_width), cfg.hl.current } },
         conceal = "",
     })
 
@@ -193,14 +199,14 @@ function M.update()
                 id = e.extmark_id,
                 end_col = e.end_col,
                 virt_text_pos = "inline",
-                virt_text = { { new_text, hl.others } },
+                virt_text = { { new_text, cfg.hl.others } },
                 conceal = "",
             })
         end
     end
 
     vim.api.nvim_buf_clear_namespace(M.buf, buf_hl_ns, 0, -1)
-    vim.api.nvim_buf_add_highlight(M.buf, buf_hl_ns, hl.current, 0, 0, -1)
+    vim.api.nvim_buf_add_highlight(M.buf, buf_hl_ns, cfg.hl.current, 0, 0, -1)
 
     -- avoid line wrapping due to the window being to small
     vim.api.nvim_win_set_width(M.win, text_width + 2)
