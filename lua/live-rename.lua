@@ -7,6 +7,8 @@ local win_hl_ns = vim.api.nvim_create_namespace("user.util.input.win_hl")
 local buf_hl_ns = vim.api.nvim_create_namespace("user.util.input.buf_hl")
 
 local cfg = {
+    prepare_rename = true,
+    request_timeout = 1500,
     keys = {
         submit = {
             { "n", "<cr>" },
@@ -18,7 +20,6 @@ local cfg = {
             { "n", "q" },
         },
     },
-    request_timeout = 1500,
     hl = {
         current = "CurSearch",
         others = "Search",
@@ -36,6 +37,16 @@ function M.map(opts)
     return function()
         M.rename(opts)
     end
+end
+
+---@param client vim.lsp.Client
+---@param buf integer
+---@param range lsp.Range
+local function range_to_cols(client, buf, range)
+    vim.print(buf)
+    local start_col = vim.lsp.util._get_line_byte_from_position(buf, range.start, client.offset_encoding)
+    local end_col = vim.lsp.util._get_line_byte_from_position(buf, range["end"], client.offset_encoding)
+    return start_col, end_col
 end
 
 --- slightly modified from `vim.lsp.client.lua`
@@ -147,10 +158,7 @@ local function rename_refs_handler(transaction_id)
         C.editing_ranges = {}
         for _, range in ipairs(editing_ranges) do
             local line = range.start.line
-            local start_col = vim.lsp.util._get_line_byte_from_position(C.doc_buf, range.start,
-                C.client.offset_encoding)
-            local end_col = vim.lsp.util._get_line_byte_from_position(C.doc_buf, range["end"],
-                C.client.offset_encoding)
+            local start_col, end_col = range_to_cols(C.client, C.doc_buf, range)
 
             local extmark_id = vim.api.nvim_buf_set_extmark(C.doc_buf, extmark_ns, line, start_col, {
                 end_col = end_col,
@@ -172,27 +180,10 @@ end
 function M.rename(opts)
     opts = opts or {}
 
-    local cword = vim.fn.expand("<cword>")
-    local text = opts.text or cword or ""
-    local text_width = vim.fn.strdisplaywidth(text)
-
-    C.new_text = text
     C.doc_buf = vim.api.nvim_get_current_buf()
     C.doc_win = vim.api.nvim_get_current_win()
 
-    -- get word start
-    local old_pos = vim.api.nvim_win_get_cursor(C.doc_win)
-    C.line = old_pos[1] - 1
-    vim.fn.search(cword, "bc")
-    local new_pos = vim.api.nvim_win_get_cursor(C.doc_win)
-    vim.api.nvim_win_set_cursor(0, old_pos)
-    C.col = old_pos[2]
-    C.end_col = C.col
-    if new_pos[1] == old_pos[1] then
-        C.col = new_pos[2]
-        C.end_col = C.col + #cword
-    end
-
+    -- find client that supports renaming
     local clients = vim.lsp.get_clients({
         bufnr = C.doc_buf,
         method = lsp_methods.rename,
@@ -202,13 +193,66 @@ function M.rename(opts)
         vim.notify("[LSP] rename, no matching server attached")
         return
     end
-    C.rename_params = vim.lsp.util.make_position_params(C.doc_win, client.offset_encoding)
-    C.rename_params.newName = cword
     C.client = client
+
+    local position_params = vim.lsp.util.make_position_params(C.doc_win, client.offset_encoding)
+
+    -- get word to rename
+    local cword = nil
+    if cfg.prepare_rename and client.supports_method(lsp_methods.textDocument_prepareRename) then
+        local resp = lsp_request_sync(client, lsp_methods.textDocument_prepareRename, position_params, C.doc_buf)
+        if resp and resp.err == nil and resp.result then
+            local result = resp.result
+            vim.print(result)
+            local range = nil
+            if result.defaultBehavior then
+                -- fallback
+            elseif result.range then
+                range = result.range
+                cword = result.placeholder
+            else
+                range = result
+                local start_col, end_col = range_to_cols(client, C.doc_buf, range)
+                local lines = vim.api.nvim_buf_get_lines(C.doc_buf, range.start.line, range.start.line + 1, true)
+                cword = string.sub(lines[1], start_col + 1, end_col)
+            end
+
+            if range then
+                C.line = range.start.line
+                C.col, C.end_col = range_to_cols(client, C.doc_buf, range)
+            end
+        end
+    end
+
+    -- use <cword> as a fallback
+    if not cword then
+        cword = vim.fn.expand("<cword>")
+
+        local old_pos = vim.api.nvim_win_get_cursor(C.doc_win)
+        C.line = old_pos[1] - 1
+        C.col = old_pos[2]
+        C.end_col = C.col
+
+        -- search backward and rstore cursor position
+        vim.fn.search(cword, "bc")
+        local new_pos = vim.api.nvim_win_get_cursor(C.doc_win)
+        vim.api.nvim_win_set_cursor(0, old_pos)
+
+        if new_pos[1] == old_pos[1] then
+            C.col = new_pos[2]
+            C.end_col = C.col + #cword
+        end
+    end
+
+    local text = opts.text or cword or ""
+    local text_width = vim.fn.strdisplaywidth(text)
+    C.new_text = text
 
     -- make initial request to receive edit ranges
     local transaction_id = math.random()
     local handler = rename_refs_handler(transaction_id)
+    C.rename_params = position_params
+    C.rename_params.newName = cword
     C.client.request(lsp_methods.textDocument_rename, C.rename_params, handler, C.doc_buf)
     C.ref_transaction_id = transaction_id
 

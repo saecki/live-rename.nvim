@@ -18,6 +18,10 @@ Plug 'saecki/crates.nvim'
 ```lua
 -- default config
 require("live-rename").setup({
+    -- use a request to the server to determine word to be renamed,
+    -- can be slow on some servers. otherwise fallback to `<cword>`
+    prepare_rename = true,
+    request_timeout = 1500,
     keys = {
         submit = {
             { "n", "<cr>" },
@@ -29,7 +33,6 @@ require("live-rename").setup({
             { "n", "q" },
         },
     },
-    request_timeout = 1500,
     hl = {
         current = "CurSearch",
         others = "Search",
