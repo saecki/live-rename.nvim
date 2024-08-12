@@ -93,7 +93,7 @@ local function references_handler(transaction_id)
         ---@type lsp.Position
         local pos = C.pos_params.position
 
-        local on_same_line = 0
+        local win_offset = 0
         for _, loc in ipairs(result) do
             if vim.uri_to_bufnr(loc.uri) == C.doc_buf then
                 local range = loc.range
@@ -104,7 +104,8 @@ local function references_handler(transaction_id)
                 elseif pos.character < range.start.character or pos.character >= range["end"].character then
                     -- on same line but not inside the character range
                     if pos.character >= range["end"].character then
-                        on_same_line = on_same_line + 1
+                        local len = range["end"].character - range.start.character
+                        win_offset = win_offset + len
                     end
                     table.insert(editing_ranges, loc.range)
                 end
@@ -112,7 +113,7 @@ local function references_handler(transaction_id)
         end
 
         -- update window position
-        if on_same_line > 0 then
+        if win_offset > 0 then
             local win_opts = {
                 -- relative to buffer text
                 relative = "win",
@@ -120,7 +121,7 @@ local function references_handler(transaction_id)
                 bufpos = { C.line, C.col },
                 row = 0,
                 -- correct for extmarks on the same line
-                col = -on_same_line * #C.cword,
+                col = -win_offset
             }
             vim.api.nvim_win_set_config(C.win, win_opts)
         end
@@ -158,7 +159,6 @@ function M.rename(opts)
     local text = opts.text or cword or ""
     local text_width = vim.fn.strdisplaywidth(text)
 
-    C.cword = cword
     C.new_text = text
     C.doc_buf = vim.api.nvim_get_current_buf()
     C.doc_win = vim.api.nvim_get_current_win()
