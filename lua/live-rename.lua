@@ -100,14 +100,14 @@ local function references_handler(transaction_id)
                 assert(range.start.line == range["end"].line)
                 if range.start.line ~= pos.line then
                     -- on other line
-                    table.insert(editing_ranges, loc.range)
+                    table.insert(editing_ranges, range)
                 elseif pos.character < range.start.character or pos.character >= range["end"].character then
                     -- on same line but not inside the character range
                     if pos.character >= range["end"].character then
                         local len = range["end"].character - range.start.character
                         win_offset = win_offset + len
                     end
-                    table.insert(editing_ranges, loc.range)
+                    table.insert(editing_ranges, range)
                 end
             end
         end
@@ -314,7 +314,6 @@ function M.update()
 end
 
 function M.submit()
-    local new_text = vim.api.nvim_buf_get_lines(C.buf, 0, 1, false)[1]
     local mode = vim.api.nvim_get_mode().mode;
     if mode == "i" then
         vim.cmd.stopinsert()
@@ -324,7 +323,7 @@ function M.submit()
     local params = {
         textDocument = C.pos_params.textDocument,
         position = C.pos_params.position,
-        newName = new_text,
+        newName = C.new_text,
     }
     local resp = lsp_request_sync(C.client, lsp_methods.textDocument_rename, params, C.doc_buf)
     if resp then
