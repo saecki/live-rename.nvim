@@ -74,9 +74,9 @@ local function lsp_request_sync(client, method, params, bufnr)
 end
 
 
-local function references_handler(transaction_id)
+local function rename_refs_handler(transaction_id)
     ---@param err string?
-    ---@param result lsp.Location[]?
+    ---@param result lsp.WorkspaceEdit?
     return function(err, result)
         -- check if the user is still in the same renaming session
         if C.ref_transaction_id == nil or C.ref_transaction_id ~= transaction_id then
@@ -88,27 +88,44 @@ local function references_handler(transaction_id)
             return
         end
 
+        local document_edits
+        if result.changes then
+            for uri, edits in pairs(result.changes) do
+                if vim.uri_to_bufnr(uri) == C.doc_buf then
+                    document_edits = edits
+                    break
+                end
+            end
+        elseif result.documentChanges then
+            for _, change in ipairs(result.documentChanges) do
+                if change.edits and change.textDocument and vim.uri_to_bufnr(change.textDocument.uri) == C.doc_buf then
+                    document_edits = change.edits
+                    break
+                end
+            end
+        end
+        if not document_edits then
+            return
+        end
+
         ---@type lsp.Range[]
         local editing_ranges = {}
         ---@type lsp.Position
-        local pos = C.pos_params.position
-
+        local pos = C.rename_params.position
         local win_offset = 0
-        for _, loc in ipairs(result) do
-            if vim.uri_to_bufnr(loc.uri) == C.doc_buf then
-                local range = loc.range
-                assert(range.start.line == range["end"].line)
-                if range.start.line ~= pos.line then
-                    -- on other line
-                    table.insert(editing_ranges, range)
-                elseif pos.character < range.start.character or pos.character >= range["end"].character then
-                    -- on same line but not inside the character range
-                    if pos.character >= range["end"].character then
-                        local len = range["end"].character - range.start.character
-                        win_offset = win_offset + len
-                    end
-                    table.insert(editing_ranges, range)
+        for _, edit in ipairs(document_edits) do
+            local range = edit.range
+            assert(range.start.line == range["end"].line)
+            if range.start.line ~= pos.line then
+                -- on other line
+                table.insert(editing_ranges, range)
+            elseif pos.character < range.start.character or pos.character >= range["end"].character then
+                -- on same line but not inside the character range
+                if pos.character >= range["end"].character then
+                    local len = range["end"].character - range.start.character
+                    win_offset = win_offset + len
                 end
+                table.insert(editing_ranges, range)
             end
         end
 
@@ -180,32 +197,20 @@ function M.rename(opts)
         bufnr = C.doc_buf,
         method = lsp_methods.rename,
     })
-    if #clients == 0 then
+    local client = clients[1]
+    if not client then
         vim.notify("[LSP] rename, no matching server attached")
         return
     end
+    C.rename_params = vim.lsp.util.make_position_params(C.doc_win, client.offset_encoding)
+    C.rename_params.newName = cword
+    C.client = client
 
-    -- try to find a client that suuports `textDocuent/references`
-    for _, client in ipairs(clients) do
-        if client.supports_method(lsp_methods.textDocument_references) then
-            C.pos_params = vim.lsp.util.make_position_params(C.doc_win, client.offset_encoding)
-            C.pos_params.context = { includeDeclaration = true }
-            C.client = client
-            break
-        end
-    end
-    if C.client then
-        local transaction_id = math.random()
-        local handler = references_handler(transaction_id)
-        C.client.request(lsp_methods.textDocument_references, C.pos_params, handler, C.doc_buf)
-        C.ref_transaction_id = transaction_id
-    else
-        -- default to the first client that supports renaming
-        local client = clients[1]
-        C.pos_params = vim.lsp.util.make_position_params(C.doc_win, client.offset_encoding)
-        C.pos_params.context = { includeDeclaration = true }
-        C.client = client
-    end
+    -- make initial request to receive edit ranges
+    local transaction_id = math.random()
+    local handler = rename_refs_handler(transaction_id)
+    C.client.request(lsp_methods.textDocument_rename, C.rename_params, handler, C.doc_buf)
+    C.ref_transaction_id = transaction_id
 
     -- conceal word in document with spaces, requires at least concealleval=2
     C.prev_conceallevel = vim.wo[C.doc_win].conceallevel
@@ -318,12 +323,8 @@ function M.submit()
     end
 
     -- do a sync request to avoid flicker when deleting extmarks
-    local params = {
-        textDocument = C.pos_params.textDocument,
-        position = C.pos_params.position,
-        newName = C.new_text,
-    }
-    local resp = lsp_request_sync(C.client, lsp_methods.textDocument_rename, params, C.doc_buf)
+    C.rename_params.newName = C.new_text
+    local resp = lsp_request_sync(C.client, lsp_methods.textDocument_rename, C.rename_params, C.doc_buf)
     if resp then
         local handler = C.client.handlers[lsp_methods.textDocument_rename]
             or vim.lsp.handlers[lsp_methods.textDocument_rename]
