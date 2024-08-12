@@ -250,11 +250,9 @@ function M.rename(opts)
 
     -- key mappings
     for _, k in ipairs(cfg.keys.submit) do
-        vim.print(k)
         vim.keymap.set(k[1], k[2], M.submit, { buffer = C.buf, desc = "Submit rename" })
     end
     for _, k in ipairs(cfg.keys.cancel) do
-        vim.print(k)
         vim.keymap.set(k[1], k[2], M.hide, { buffer = C.buf, desc = "Cancel rename" })
     end
 
