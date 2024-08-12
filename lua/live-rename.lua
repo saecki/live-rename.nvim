@@ -215,6 +215,13 @@ function M.rename(opts)
         buffer = C.buf,
         callback = M.update,
     })
+    -- cleanup when window is closed
+    vim.api.nvim_create_autocmd("WinClosed", {
+        group = group,
+        buffer = C.buf,
+        callback = M.hide,
+        once = true,
+    })
 
     -- focus and enter insert mode
     vim.api.nvim_set_current_win(C.win)
