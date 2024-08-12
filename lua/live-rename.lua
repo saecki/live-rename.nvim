@@ -12,7 +12,15 @@ local hl = {
     others = "Search",
 }
 
+function M.map(opts)
+    return function()
+        M.rename(opts)
+    end
+end
+
 function M.rename(opts)
+    opts = opts or {}
+
     local cword = vim.fn.expand("<cword>")
     local text = opts.text or cword or ""
     local text_width = vim.fn.strdisplaywidth(text)
