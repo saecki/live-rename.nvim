@@ -18,6 +18,17 @@ Plug 'saecki/crates.nvim'
 ```lua
 -- default config
 require("live-rename").setup({
+    keys = {
+        submit = {
+            { "n", "<cr>" },
+            { "v", "<cr>" },
+            { "i", "<cr>" },
+        },
+        cancel = {
+            { "n", "<esc>" },
+            { "n", "q" },
+        },
+    },
     request_timeout = 1500,
     hl = {
         current = "CurSearch",

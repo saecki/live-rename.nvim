@@ -7,6 +7,17 @@ local win_hl_ns = vim.api.nvim_create_namespace("user.util.input.win_hl")
 local buf_hl_ns = vim.api.nvim_create_namespace("user.util.input.buf_hl")
 
 local cfg = {
+    keys = {
+        submit = {
+            { "n", "<cr>" },
+            { "v", "<cr>" },
+            { "i", "<cr>" },
+        },
+        cancel = {
+            { "n", "<esc>" },
+            { "n", "q" },
+        },
+    },
     request_timeout = 1500,
     hl = {
         current = "CurSearch",
@@ -238,11 +249,14 @@ function M.rename(opts)
     vim.api.nvim_win_set_hl_ns(C.win, win_hl_ns)
 
     -- key mappings
-    vim.api.nvim_buf_set_keymap(C.buf, "n", "<cr>", "", { callback = M.submit, noremap = true, silent = true })
-    vim.api.nvim_buf_set_keymap(C.buf, "v", "<cr>", "", { callback = M.submit, noremap = true, silent = true })
-    vim.api.nvim_buf_set_keymap(C.buf, "i", "<cr>", "", { callback = M.submit, noremap = true, silent = true })
-    vim.api.nvim_buf_set_keymap(C.buf, "n", "<esc>", "", { callback = M.hide, noremap = true, silent = true })
-    vim.api.nvim_buf_set_keymap(C.buf, "n", "q", "", { callback = M.hide, noremap = true, silent = true })
+    for _, k in ipairs(cfg.keys.submit) do
+        vim.print(k)
+        vim.keymap.set(k[1], k[2], M.submit, { buffer = C.buf, desc = "Submit rename" })
+    end
+    for _, k in ipairs(cfg.keys.cancel) do
+        vim.print(k)
+        vim.keymap.set(k[1], k[2], M.hide, { buffer = C.buf, desc = "Cancel rename" })
+    end
 
     local group = vim.api.nvim_create_augroup("live-rename", {})
     -- update when input changes
