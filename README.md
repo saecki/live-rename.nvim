@@ -1,4 +1,7 @@
 # live-rename.nvim
+Live preview lsp rename actions
+
+https://github.com/user-attachments/assets/7cc03f60-3c59-45f5-b8e7-e53e324ce56b
 
 ## Installation
 [__lazy.nvim__](https://github.com/folke/lazy.nvim)
