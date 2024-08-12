@@ -62,6 +62,84 @@ local function lsp_request_sync(client, method, params, bufnr)
     return request_result
 end
 
+
+local function references_handler(transaction_id)
+    ---@param err string?
+    ---@param result lsp.Location[]?
+    return function(err, result)
+        -- check if the user is still in the same renaming session
+        if C.ref_transaction_id == nil or C.ref_transaction_id ~= transaction_id then
+            return
+        end
+
+        if err or result == nil then
+            vim.notify(string.format("[LSP] rename, error getting references: `%s`", err))
+            return
+        end
+
+        ---@type lsp.Range[]
+        local editing_ranges = {}
+        ---@type lsp.Position
+        local pos = C.pos_params.position
+
+        local on_same_line = 0
+        for _, loc in ipairs(result) do
+            if vim.uri_to_bufnr(loc.uri) == C.doc_buf then
+                local range = loc.range
+                assert(range.start.line == range["end"].line)
+                if range.start.line ~= pos.line then
+                    -- on other line
+                    table.insert(editing_ranges, loc.range)
+                elseif pos.character < range.start.character or pos.character >= range["end"].character then
+                    -- on same line but not inside the character range
+                    if pos.character >= range["end"].character then
+                        on_same_line = on_same_line + 1
+                    end
+                    table.insert(editing_ranges, loc.range)
+                end
+            end
+        end
+
+        -- update window position
+        if on_same_line > 0 then
+            local win_opts = {
+                -- relative to buffer text
+                relative = "win",
+                win = C.doc_win,
+                bufpos = { C.line, C.col },
+                row = 0,
+                -- correct for extmarks on the same line
+                col = -on_same_line * #C.cword,
+            }
+            vim.api.nvim_win_set_config(C.win, win_opts)
+        end
+
+        -- also show edit in other occurrences
+        C.editing_ranges = {}
+        for _, range in ipairs(editing_ranges) do
+            local line = range.start.line
+            local start_col = vim.lsp.util._get_line_byte_from_position(C.doc_buf, range.start,
+                C.client.offset_encoding)
+            local end_col = vim.lsp.util._get_line_byte_from_position(C.doc_buf, range["end"],
+                C.client.offset_encoding)
+
+            local extmark_id = vim.api.nvim_buf_set_extmark(C.doc_buf, extmark_ns, line, start_col, {
+                end_col = end_col,
+                virt_text_pos = "inline",
+                virt_text = { { C.new_text, cfg.hl.others } },
+                conceal = "",
+            })
+
+            table.insert(C.editing_ranges, {
+                extmark_id = extmark_id,
+                line = line,
+                start_col = start_col,
+                end_col = end_col,
+            })
+        end
+    end
+end
+
 function M.rename(opts)
     opts = opts or {}
 
@@ -69,6 +147,8 @@ function M.rename(opts)
     local text = opts.text or cword or ""
     local text_width = vim.fn.strdisplaywidth(text)
 
+    C.cword = cword
+    C.new_text = text
     C.doc_buf = vim.api.nvim_get_current_buf()
     C.doc_win = vim.api.nvim_get_current_win()
 
@@ -94,45 +174,26 @@ function M.rename(opts)
         return
     end
 
+    -- try to find a client that suuports `textDocuent/references`
     for _, client in ipairs(clients) do
         if client.supports_method(lsp_methods.textDocument_references) then
+            C.pos_params = vim.lsp.util.make_position_params(C.doc_win, client.offset_encoding)
+            C.pos_params.context = { includeDeclaration = true }
             C.client = client
             break
         end
     end
-
-
-    ---@type lsp.Range[]?
-    local editing_ranges = nil
-    local on_same_line = 0
     if C.client then
-        local params = vim.lsp.util.make_position_params(C.doc_win, C.client.offset_encoding)
-        params.context = { includeDeclaration = true }
-        local resp = lsp_request_sync(C.client, lsp_methods.textDocument_references, params, C.doc_buf)
-        if resp and resp.err == nil and resp.result then
-            ---@type lsp.Location[]
-            local locations = resp.result
-            editing_ranges = {}
-            for _, loc in ipairs(locations) do
-                if vim.uri_to_bufnr(loc.uri) == C.doc_buf then
-                    local range = loc.range
-                    local pos = params.position
-                    if range.start.line ~= pos.line or range["end"].line ~= pos.line then
-                        table.insert(editing_ranges, loc.range)
-                    elseif pos.character >= range.start.character and pos.character < range["end"].character then
-                        -- ignore the range that is edited directly
-                    else
-                        if pos.character >= range["end"].character then
-                            on_same_line = on_same_line + 1
-                        end
-                        table.insert(editing_ranges, loc.range)
-                    end
-                end
-            end
-            C.pos_params = params
-        end
+        local transaction_id = math.random()
+        local handler = references_handler(transaction_id)
+        C.client.request(lsp_methods.textDocument_references, C.pos_params, handler, C.doc_buf)
+        C.ref_transaction_id = transaction_id
     else
-        C.client = clients[1]
+        -- default to the first client that supports renaming
+        local client = clients[1]
+        C.pos_params = vim.lsp.util.make_position_params(C.doc_win, client.offset_encoding)
+        C.pos_params.context = { includeDeclaration = true }
+        C.client = client
     end
 
     -- conceal word in document with spaces, requires at least concealleval=2
@@ -146,30 +207,6 @@ function M.rename(opts)
         conceal = "",
     })
 
-    -- also show edit in other occurrences
-    if editing_ranges then
-        C.editing_ranges = {}
-        for _, range in ipairs(editing_ranges) do
-            local line = range.start.line
-            local start_col = vim.lsp.util._get_line_byte_from_position(C.doc_buf, range.start, C.client.offset_encoding)
-            local end_col = vim.lsp.util._get_line_byte_from_position(C.doc_buf, range["end"], C.client.offset_encoding)
-
-            local extmark_id = vim.api.nvim_buf_set_extmark(C.doc_buf, extmark_ns, line, start_col, {
-                end_col = end_col,
-                virt_text_pos = "inline",
-                virt_text = { { text, cfg.hl.others } },
-                conceal = "",
-            })
-
-            table.insert(C.editing_ranges, {
-                extmark_id = extmark_id,
-                line = line,
-                start_col = start_col,
-                end_col = end_col,
-            })
-        end
-    end
-
     -- create buf
     C.buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_name(C.buf, "lsp:rename")
@@ -182,8 +219,7 @@ function M.rename(opts)
         win = C.doc_win,
         bufpos = { C.line, C.col },
         row = 0,
-        -- correct for extmarks on the same line
-        col = -on_same_line * #text,
+        col = 0,
 
         width = text_width + 2,
         height = 1,
@@ -232,8 +268,8 @@ function M.rename(opts)
 end
 
 function M.update()
-    local new_text = vim.api.nvim_buf_get_lines(C.buf, 0, 1, false)[1]
-    local text_width = vim.fn.strdisplaywidth(new_text)
+    C.new_text = vim.api.nvim_buf_get_lines(C.buf, 0, 1, false)[1]
+    local text_width = vim.fn.strdisplaywidth(C.new_text)
 
     vim.api.nvim_buf_set_extmark(C.doc_buf, extmark_ns, C.line, C.col, {
         id = C.extmark_id,
@@ -250,7 +286,7 @@ function M.update()
                 id = e.extmark_id,
                 end_col = e.end_col,
                 virt_text_pos = "inline",
-                virt_text = { { new_text, cfg.hl.others } },
+                virt_text = { { C.new_text, cfg.hl.others } },
                 conceal = "",
             })
         end
