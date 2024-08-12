@@ -14,7 +14,7 @@ local cfg = {
     },
 }
 
---- context
+--- session context
 local C = {}
 
 function M.setup(user_cfg)
