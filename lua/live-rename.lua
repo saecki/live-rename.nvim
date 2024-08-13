@@ -46,7 +46,6 @@ end
 ---@param buf integer
 ---@param range lsp.Range
 local function range_to_cols(client, buf, range)
-    vim.print(buf)
     local start_col = vim.lsp.util._get_line_byte_from_position(buf, range.start, client.offset_encoding)
     local end_col = vim.lsp.util._get_line_byte_from_position(buf, range["end"], client.offset_encoding)
     return start_col, end_col
@@ -206,7 +205,6 @@ function M.rename(opts)
         local resp = lsp_request_sync(client, lsp_methods.textDocument_prepareRename, position_params, C.doc_buf)
         if resp and resp.err == nil and resp.result then
             local result = resp.result
-            vim.print(result)
             local range = nil
             if result.defaultBehavior then
                 -- fallback
