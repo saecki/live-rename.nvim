@@ -7,6 +7,9 @@ local win_hl_ns = vim.api.nvim_create_namespace("user.util.input.win_hl")
 local buf_hl_ns = vim.api.nvim_create_namespace("user.util.input.buf_hl")
 
 local cfg = {
+    -- Send a `textDocument/prepareRename` request to the server to
+    -- determine the word to be renamed, can be slow on some servers.
+    -- Otherwise fallback to using `<cword>`.
     prepare_rename = true,
     request_timeout = 1500,
     keys = {

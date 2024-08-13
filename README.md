@@ -18,8 +18,9 @@ Plug 'saecki/crates.nvim'
 ```lua
 -- default config
 require("live-rename").setup({
-    -- use a request to the server to determine word to be renamed,
-    -- can be slow on some servers. otherwise fallback to `<cword>`
+    -- Send a `textDocument/prepareRename` request to the server to
+    -- determine the word to be renamed, can be slow on some servers.
+    -- Otherwise fallback to using `<cword>`.
     prepare_rename = true,
     request_timeout = 1500,
     keys = {
