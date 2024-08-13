@@ -86,9 +86,8 @@ local function lsp_request_sync(client, method, params, bufnr)
     return request_result
 end
 
-
 local function rename_refs_handler(transaction_id)
-    ---@param err string?
+    ---@param err lsp.ResponseError?
     ---@param result lsp.WorkspaceEdit?
     return function(err, result)
         -- check if the user is still in the same renaming session
@@ -97,7 +96,7 @@ local function rename_refs_handler(transaction_id)
         end
 
         if err or result == nil then
-            vim.notify(string.format("[LSP] rename, error getting references: `%s`", err))
+            vim.notify(string.format("[LSP] rename, error getting references: `%s`", err.message))
             return
         end
 
