@@ -187,7 +187,7 @@ function M.rename(opts)
     -- find client that supports renaming
     local clients = vim.lsp.get_clients({
         bufnr = C.doc_buf,
-        method = lsp_methods.rename,
+        method = lsp_methods.textDocument_rename,
     })
     local client = clients[1]
     if not client then
