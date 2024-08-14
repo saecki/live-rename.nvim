@@ -6,6 +6,21 @@ local extmark_ns = vim.api.nvim_create_namespace("user.util.input.extmark")
 local win_hl_ns = vim.api.nvim_create_namespace("user.util.input.win_hl")
 local buf_hl_ns = vim.api.nvim_create_namespace("user.util.input.buf_hl")
 
+---@class Config
+---@field prepare_rename boolean
+---@field request_timeout integer
+---@field keys KeysConfig
+---@field hl HlConfig
+
+---@class KeysConfig
+---@field submit {[1]: string, [2]: string}[]
+---@field cancel {[1]: string, [2]: string}[]
+---
+---@class HlConfig
+---@field current string
+---@field others string
+
+---@type Config
 local cfg = {
     -- Send a `textDocument/prepareRename` request to the server to
     -- determine the word to be renamed, can be slow on some servers.
@@ -29,7 +44,32 @@ local cfg = {
     },
 }
 
+---@class Context
+---@field doc_buf integer
+---@field doc_win integer
+---
+---@field win integer
+---@field buf integer
+---@field line integer
+---@field start_col integer
+---@field end_col integer
+---@field new_text string
+---@field extmark_id integer
+---
+---@field prev_conceallevel integer
+---@field client vim.lsp.Client
+---@field ref_transaction_id number?
+---@field editing_ranges EditingRange[]?
+---@field rename_params lsp.RenameParams
+
+---@class EditingRange
+---@field extmark_id integer
+---@field line integer
+---@field start_col integer
+---@field end_col integer
+
 --- session context
+---@type Context
 local C = {}
 
 function M.setup(user_cfg)
@@ -45,6 +85,7 @@ end
 ---@param client vim.lsp.Client
 ---@param buf integer
 ---@param range lsp.Range
+---@return integer, integer
 local function range_to_cols(client, buf, range)
     local start_col = vim.lsp.util._get_line_byte_from_position(buf, range.start, client.offset_encoding)
     local end_col = vim.lsp.util._get_line_byte_from_position(buf, range["end"], client.offset_encoding)
@@ -54,7 +95,7 @@ end
 --- slightly modified from `vim.lsp.client.lua`
 ---@param client vim.lsp.Client
 ---@param method string
----@param params lsp.TextDocumentPositionParams
+---@param params lsp.TextDocumentPositionParams|lsp.RenameParams
 ---@param bufnr integer
 ---@return table<string,any>?
 local function lsp_request_sync(client, method, params, bufnr)
@@ -98,6 +139,7 @@ local function rename_refs_handler(transaction_id)
         if result == nil then
             local message = "[LSP] rename, error getting references"
             if err then
+                ---@type string
                 local err_msg
                 if type(err) == "string" then
                     err_msg = err
@@ -112,7 +154,8 @@ local function rename_refs_handler(transaction_id)
             return
         end
 
-        local document_edits
+        ---@type lsp.TextEdit[]?
+        local document_edits = nil
         if result.changes then
             for uri, edits in pairs(result.changes) do
                 if vim.uri_to_bufnr(uri) == C.doc_buf then
@@ -159,7 +202,7 @@ local function rename_refs_handler(transaction_id)
                 -- relative to buffer text
                 relative = "win",
                 win = C.doc_win,
-                bufpos = { C.line, C.col },
+                bufpos = { C.line, C.start_col },
                 row = 0,
                 -- correct for extmarks on the same line
                 col = -win_offset
@@ -190,6 +233,11 @@ local function rename_refs_handler(transaction_id)
     end
 end
 
+---@class RenameOpts
+---@field text string?
+---@field insert boolean?
+
+---@param opts RenameOpts?
 function M.rename(opts)
     opts = opts or {}
 
@@ -215,7 +263,9 @@ function M.rename(opts)
     if cfg.prepare_rename and client.supports_method(lsp_methods.textDocument_prepareRename) then
         local resp = lsp_request_sync(client, lsp_methods.textDocument_prepareRename, position_params, C.doc_buf)
         if resp and resp.err == nil and resp.result then
+            ---@type lsp.PrepareRenameResult
             local result = resp.result
+            ---@type lsp.Range?
             local range = nil
             if result.defaultBehavior then
                 -- fallback
@@ -223,6 +273,7 @@ function M.rename(opts)
                 range = result.range
                 cword = result.placeholder
             else
+                ---@cast result lsp.Range
                 range = result
                 local start_col, end_col = range_to_cols(client, C.doc_buf, range)
                 local lines = vim.api.nvim_buf_get_lines(C.doc_buf, range.start.line, range.start.line + 1, true)
@@ -231,7 +282,7 @@ function M.rename(opts)
 
             if range then
                 C.line = range.start.line
-                C.col, C.end_col = range_to_cols(client, C.doc_buf, range)
+                C.start_col, C.end_col = range_to_cols(client, C.doc_buf, range)
             end
         end
     end
@@ -242,8 +293,8 @@ function M.rename(opts)
 
         local old_pos = vim.api.nvim_win_get_cursor(C.doc_win)
         C.line = old_pos[1] - 1
-        C.col = old_pos[2]
-        C.end_col = C.col
+        C.start_col = old_pos[2]
+        C.end_col = C.start_col
 
         -- search backward and rstore cursor position
         vim.fn.search(cword, "bc")
@@ -251,12 +302,12 @@ function M.rename(opts)
         vim.api.nvim_win_set_cursor(0, old_pos)
 
         if new_pos[1] == old_pos[1] then
-            C.col = new_pos[2]
-            C.end_col = C.col + #cword
+            C.start_col = new_pos[2]
+            C.end_col = C.start_col + #cword
         end
     end
 
-    local text = opts.text or cword or ""
+    local text = opts.text or cword
     local text_width = vim.fn.strdisplaywidth(text)
     C.new_text = text
 
@@ -272,7 +323,7 @@ function M.rename(opts)
     C.prev_conceallevel = vim.wo[C.doc_win].conceallevel
     vim.wo[C.doc_win].conceallevel = 2
 
-    C.extmark_id = vim.api.nvim_buf_set_extmark(C.doc_buf, extmark_ns, C.line, C.col, {
+    C.extmark_id = vim.api.nvim_buf_set_extmark(C.doc_buf, extmark_ns, C.line, C.start_col, {
         end_col = C.end_col,
         virt_text_pos = "inline",
         virt_text = { { string.rep(" ", text_width), cfg.hl.current } },
@@ -289,7 +340,7 @@ function M.rename(opts)
         -- relative to buffer text
         relative = "win",
         win = C.doc_win,
-        bufpos = { C.line, C.col },
+        bufpos = { C.line, C.start_col },
         row = 0,
         col = 0,
 
@@ -344,7 +395,7 @@ function M.update()
     C.new_text = vim.api.nvim_buf_get_lines(C.buf, 0, 1, false)[1]
     local text_width = vim.fn.strdisplaywidth(C.new_text)
 
-    vim.api.nvim_buf_set_extmark(C.doc_buf, extmark_ns, C.line, C.col, {
+    vim.api.nvim_buf_set_extmark(C.doc_buf, extmark_ns, C.line, C.start_col, {
         id = C.extmark_id,
         end_col = C.end_col,
         virt_text_pos = "inline",
