@@ -1,5 +1,5 @@
 # live-rename.nvim
-Live preview lsp rename actions
+A neovim plugin to live preview lsp renames.
 
 https://github.com/user-attachments/assets/7cc03f60-3c59-45f5-b8e7-e53e324ce56b
 
