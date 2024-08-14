@@ -95,8 +95,20 @@ local function rename_refs_handler(transaction_id)
             return
         end
 
-        if err or result == nil then
-            vim.notify(string.format("[LSP] rename, error getting references: `%s`", err.message))
+        if result == nil then
+            local message = "[LSP] rename, error getting references"
+            if err then
+                local err_msg
+                if type(err) == "string" then
+                    err_msg = err
+                elseif type(err) == "table" and err.message then
+                    err_msg = err.message
+                else
+                    err_msg = vim.inspect(err)
+                end
+                message = string.format("[LSP] rename, error getting references: `%s`", err_msg)
+            end
+            vim.notify(message, vim.log.levels.ERROR)
             return
         end
 
