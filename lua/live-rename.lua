@@ -99,7 +99,7 @@ local function notify_error(message, err)
         else
             err_msg = vim.inspect(err)
         end
-        message = message .. string.format("%s: `%s`", message, err_msg)
+        message = string.format("%s: `%s`", message, err_msg)
     end
     vim.notify(message, vim.log.levels.ERROR)
 end
