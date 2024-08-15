@@ -275,7 +275,11 @@ function M.rename(opts)
     if cfg.prepare_rename and client.supports_method(lsp_methods.textDocument_prepareRename) then
         local resp = lsp_request_sync(client, lsp_methods.textDocument_prepareRename, position_params, doc_buf)
         if not resp or resp.err ~= nil or resp.result == nil then
-            notify_error("[LSP] rename, error preparing rename", resp and resp.err)
+            if resp and resp.err then
+                notify_error("[LSP] rename, error preparing rename", resp and resp.err)
+            else
+                notify_error("[LSP] rename, invalid position")
+            end
             return
         else
             ---@type lsp.PrepareRenameResult
