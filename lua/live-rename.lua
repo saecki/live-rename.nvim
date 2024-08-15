@@ -87,6 +87,7 @@ local cfg = {
 ---@field line integer
 ---@field start_col integer
 ---@field end_col integer
+---@field pattern string?
 
 --- session context
 ---@type Context?
@@ -170,8 +171,9 @@ local function lsp_request_sync(client, method, params, bufnr)
 end
 
 ---@param transaction_id number
+---@param unique_name string
 ---@return lsp.Handler
-local function rename_refs_handler(transaction_id)
+local function rename_refs_handler(transaction_id, unique_name)
     ---@param err lsp.ResponseError?
     ---@param result lsp.WorkspaceEdit?
     return function(err, result)
@@ -206,24 +208,30 @@ local function rename_refs_handler(transaction_id)
             return
         end
 
-        ---@type lsp.Range[]
+        ---@type { range:lsp.Range, pattern:string? }[]
         local editing_ranges = {}
         ---@type lsp.Position
         local pos = C.rename_params.position
         local win_offset = 0
         for _, edit in ipairs(document_edits) do
+            local pattern = nil
+            if unique_name ~= edit.newText then
+                local escaped = edit.newText:gsub("%%", "%%")
+                pattern = escaped:gsub(unique_name, "%%s")
+            end
+
             local range = edit.range
             assert(range.start.line == range["end"].line)
             if range.start.line ~= pos.line then
                 -- on other line
-                table.insert(editing_ranges, range)
+                table.insert(editing_ranges, { range = range, pattern = pattern })
             elseif pos.character < range.start.character or pos.character >= range["end"].character then
                 -- on same line but not inside the character range
                 if pos.character >= range["end"].character then
                     local len = range["end"].character - range.start.character
                     win_offset = win_offset + len
                 end
-                table.insert(editing_ranges, range)
+                table.insert(editing_ranges, { range = range, pattern = pattern })
             end
         end
 
@@ -243,14 +251,18 @@ local function rename_refs_handler(transaction_id)
 
         -- also show edit in other occurrences
         C.editing_ranges = {}
-        for _, range in ipairs(editing_ranges) do
-            local line = range.start.line
-            local start_col, end_col = range_to_cols(C.client, C.doc_buf, range)
+        for _, e in ipairs(editing_ranges) do
+            local line = e.range.start.line
+            local start_col, end_col = range_to_cols(C.client, C.doc_buf, e.range)
 
+            local new_text = C.new_text
+            if e.pattern then
+                new_text = string.format(e.pattern, new_text)
+            end
             local extmark_id = vim.api.nvim_buf_set_extmark(C.doc_buf, extmark_ns, line, start_col, {
                 end_col = end_col,
                 virt_text_pos = "inline",
-                virt_text = { { C.new_text, cfg.hl.others } },
+                virt_text = { { new_text, cfg.hl.others } },
                 conceal = "",
             })
 
@@ -259,6 +271,7 @@ local function rename_refs_handler(transaction_id)
                 line = line,
                 start_col = start_col,
                 end_col = end_col,
+                pattern = e.pattern,
             })
         end
     end
@@ -362,14 +375,18 @@ function M.rename(opts)
     local rename_params = {
         textDocument = position_params.textDocument,
         position = position_params.position,
-        -- HACK: try to use a unique enough name that
-        -- 1. is different from the current name
-        -- 2. doesn't conflict with other identifiers
-        newName = cword.text ~= "kajshfybcwriwuybqkjh" and "kajshfybcwriwuybqkjh" or "boviutyiiehsihjdlkgh",
+        newName = cword.text,
     }
     if cfg.show_other_ocurrences then
         -- make initial request to receive edit ranges
-        local handler = rename_refs_handler(transaction_id)
+
+        -- HACK: try to use a unique enough name that
+        -- 1. is different from the current name
+        -- 2. doesn't conflict with other identiiers
+        local unique_name = cword.text ~= "kajshfybcwriwuybqkjh" and "kajshfybcwriwuybqkjh" or "boviutyiiehsihjdlkgh"
+
+        rename_params.newName = unique_name
+        local handler = rename_refs_handler(transaction_id, unique_name)
         client.request(lsp_methods.textDocument_rename, rename_params, handler, doc_buf)
     end
 
@@ -478,11 +495,15 @@ function M.update()
     -- also show edit in other occurrences
     if C.editing_ranges then
         for _, e in ipairs(C.editing_ranges) do
+            local new_text = C.new_text
+            if e.pattern then
+                new_text = string.format(e.pattern, new_text)
+            end
             vim.api.nvim_buf_set_extmark(C.doc_buf, extmark_ns, e.line, e.start_col, {
                 id = e.extmark_id,
                 end_col = e.end_col,
                 virt_text_pos = "inline",
-                virt_text = { { C.new_text, cfg.hl.others } },
+                virt_text = { { new_text, cfg.hl.others } },
                 conceal = "",
             })
         end
