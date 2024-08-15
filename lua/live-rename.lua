@@ -85,6 +85,25 @@ function M.map(opts)
     end
 end
 
+---@param message string
+---@param err any?
+local function notify_error(message, err)
+    if err then
+        ---@type string
+        local err_msg
+        if type(err) == "string" then
+            err_msg = err
+        elseif type(err) == "table" and err.message and type(err.message) == "string" then
+            ---@diagnostic disable-next-line: no-unknown
+            err_msg = err.message
+        else
+            err_msg = vim.inspect(err)
+        end
+        message = message .. string.format("%s: `%s`", message, err_msg)
+    end
+    vim.notify(message, vim.log.levels.ERROR)
+end
+
 ---@param client vim.lsp.Client
 ---@param buf integer
 ---@param range lsp.Range
@@ -137,25 +156,12 @@ local function rename_refs_handler(transaction_id)
     ---@param result lsp.WorkspaceEdit?
     return function(err, result)
         -- check if the user is still in the same renaming session
-        if not C or C.ref_transaction_id ~= transaction_id then
+        if C == nil or C.ref_transaction_id ~= transaction_id then
             return
         end
 
-        if result == nil then
-            local message = "[LSP] rename, error getting references"
-            if err then
-                ---@type string
-                local err_msg
-                if type(err) == "string" then
-                    err_msg = err
-                elseif type(err) == "table" and err.message then
-                    err_msg = err.message
-                else
-                    err_msg = vim.inspect(err)
-                end
-                message = string.format("[LSP] rename, error getting references: `%s`", err_msg)
-            end
-            vim.notify(message, vim.log.levels.ERROR)
+        if result == nil or err ~= nil then
+            notify_error("[LSP] rename, error getting references", err)
             return
         end
 
@@ -266,7 +272,10 @@ function M.rename(opts)
     -- get word to rename
     if cfg.prepare_rename and client.supports_method(lsp_methods.textDocument_prepareRename) then
         local resp = lsp_request_sync(client, lsp_methods.textDocument_prepareRename, position_params, doc_buf)
-        if resp and resp.err == nil and resp.result then
+        if not resp or resp.err ~= nil or resp.result == nil then
+            notify_error("[LSP] rename, error preparing rename", resp and resp.err)
+            return
+        else
             ---@type lsp.PrepareRenameResult
             local result = resp.result
 
