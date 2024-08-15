@@ -344,7 +344,10 @@ function M.rename(opts)
     local rename_params = {
         textDocument = position_params.textDocument,
         position = position_params.position,
-        newName = cword.text,
+        -- HACK: try to use a unique enough name that
+        -- 1. is different from the current name
+        -- 2. doesn't conflict with other identifiers
+        newName = cword.text ~= "kajshfybcwriwuybqkjh" and "kajshfybcwriwuybqkjh" or "boviutyiiehsihjdlkgh",
     }
     client.request(lsp_methods.textDocument_rename, rename_params, handler, doc_buf)
 
