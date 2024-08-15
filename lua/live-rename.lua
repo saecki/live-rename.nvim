@@ -266,8 +266,10 @@ function M.rename(opts)
         return
     end
 
+    ---@type lsp.TextDocumentPositionParams
     local position_params = vim.lsp.util.make_position_params(doc_win, client.offset_encoding)
 
+    ---@type CursorWord?
     local cword = nil
     -- get word to rename
     if cfg.prepare_rename and client.supports_method(lsp_methods.textDocument_prepareRename) then
@@ -314,11 +316,11 @@ function M.rename(opts)
             line = old_pos[1] - 1,
             start_col = old_pos[2],
             end_col = old_pos[2],
-            text =  text,
+            text = text,
         }
 
         -- search backward and restore cursor position
-        vim.fn.search(cword, "bc")
+        vim.fn.search(text, "bc")
         local new_pos = vim.api.nvim_win_get_cursor(doc_win)
         vim.api.nvim_win_set_cursor(0, old_pos)
 
@@ -334,8 +336,12 @@ function M.rename(opts)
     -- make initial request to receive edit ranges
     local transaction_id = math.random()
     local handler = rename_refs_handler(transaction_id)
-    local rename_params = position_params
-    rename_params.newName = cword
+    ---@type lsp.RenameParams
+    local rename_params = {
+        textDocument = position_params.textDocument,
+        position = position_params.position,
+        newName = cword.text,
+    }
     client.request(lsp_methods.textDocument_rename, rename_params, handler, doc_buf)
 
     -- conceal word in document with spaces, requires at least concealleval=2
