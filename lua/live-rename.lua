@@ -487,23 +487,22 @@ function M.submit()
 end
 
 function M.hide()
-    if not C then
+    local ctx = C
+    if ctx == nil then
         return
     end
-
-    vim.wo[C.doc_win].conceallevel = C.prev_conceallevel
-    vim.api.nvim_buf_clear_namespace(C.doc_buf, extmark_ns, 0, -1)
-
-    if C.float_win and vim.api.nvim_win_is_valid(C.float_win) then
-        vim.api.nvim_win_close(C.float_win, false)
-    end
-
-    if C.float_buf and vim.api.nvim_buf_is_valid(C.float_buf) then
-        vim.api.nvim_buf_delete(C.float_buf, {})
-    end
-
-    -- clear context
     C = nil
+
+    vim.wo[ctx.doc_win].conceallevel = ctx.prev_conceallevel
+    vim.api.nvim_buf_clear_namespace(ctx.doc_buf, extmark_ns, 0, -1)
+
+    if vim.api.nvim_win_is_valid(ctx.float_win) then
+        vim.api.nvim_win_close(ctx.float_win, false)
+    end
+
+    if vim.api.nvim_buf_is_valid(ctx.float_buf) then
+        vim.api.nvim_buf_delete(ctx.float_buf, {})
+    end
 end
 
 return M
