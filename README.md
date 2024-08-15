@@ -57,12 +57,14 @@ require("live-rename").rename({ text = "", insert = true })
 live-rename includes a `map` function to make creating key mappings more ergonomic.  
 The options accepted are the same as for `rename`.
 ```lua
--- equivalent
-vim.keymap.set("n", "<leader>r", require("live-rename").rename)
-vim.keymap.set("n", "<leader>r", require("live-rename").map())
-vim.keymap.set("n", "<leader>r", require("live-rename").map({}))
+local live_rename = require("live-rename")
 
--- equivalent
-vim.keymap.set("n", "<leader>R", require("live-rename").map({ text = "", insert = true }))
-vim.keymap.set("n", "<leader>R", function() require("live-rename").rename({ text = "", insert = true }) end)
+-- the following are equivalent
+vim.keymap.set("n", "<leader>r", live_rename.rename, { desc = "LSP rename" })
+vim.keymap.set("n", "<leader>r", live_rename.map(), { desc = "LSP rename" })
+vim.keymap.set("n", "<leader>r", live_rename.map({}), { desc = "LSP rename" })
+
+-- the following are equivalent
+vim.keymap.set("n", "<leader>R", live_rename.map({ text = "", insert = true }), { desc = "LSP rename" })
+vim.keymap.set("n", "<leader>R", function() live_rename.rename({ text = "", insert = true }) end, { desc = "LSP rename" })
 ```
