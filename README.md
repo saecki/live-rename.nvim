@@ -11,7 +11,7 @@ https://github.com/user-attachments/assets/7cc03f60-3c59-45f5-b8e7-e53e324ce56b
 
 [__vim-plug__](https://github.com/junegunn/vim-plug)
 ```
-Plug 'saecki/crates.nvim'
+Plug 'saecki/live-rename.nvim'
 ```
 
 ## Setup (optional)
