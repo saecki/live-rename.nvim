@@ -20,6 +20,20 @@ local buf_hl_ns = vim.api.nvim_create_namespace("user.util.input.buf_hl")
 ---@field current string
 ---@field others string
 
+---@class live_rename.UserConfig
+---@field prepare_rename boolean?
+---@field request_timeout integer?
+---@field keys live_rename.UserKeysConfig?
+---@field hl live_rename.UserHlConfig?
+
+---@class live_rename.UserKeysConfig
+---@field submit {[1]: string, [2]: string}[]?
+---@field cancel {[1]: string, [2]: string}[]?
+---
+---@class live_rename.UserHlConfig
+---@field current string?
+---@field others string?
+
 ---@type Config
 local cfg = {
     -- Send a `textDocument/prepareRename` request to the server to
@@ -75,10 +89,13 @@ local cfg = {
 ---@type Context?
 local C = nil
 
+---@param user_cfg live_rename.UserConfig?
 function M.setup(user_cfg)
     cfg = vim.tbl_deep_extend("force", cfg, user_cfg or {})
 end
 
+---@param opts RenameOpts?
+---@return fun()
 function M.map(opts)
     return function()
         M.rename(opts)
