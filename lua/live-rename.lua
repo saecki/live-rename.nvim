@@ -507,7 +507,7 @@ function M.submit()
         handler(resp.err, resp.result, resp.context, resp.config)
     end
 
-    M.hide()
+    vim.schedule(M.hide)
 end
 
 function M.hide()
