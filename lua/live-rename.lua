@@ -10,6 +10,7 @@ local buf_hl_ns = vim.api.nvim_create_namespace("user.util.input.buf_hl")
 ---@field prepare_rename boolean
 ---@field request_timeout integer
 ---@field show_other_ocurrences boolean
+---@field use_patterns boolean
 ---@field keys KeysConfig
 ---@field hl HlConfig
 
@@ -25,6 +26,7 @@ local buf_hl_ns = vim.api.nvim_create_namespace("user.util.input.buf_hl")
 ---@field prepare_rename boolean?
 ---@field request_timeout integer?
 ---@field show_other_ocurrences boolean?
+---@field use_patterns boolean?
 ---@field keys live_rename.UserKeysConfig?
 ---@field hl live_rename.UserHlConfig?
 
@@ -43,7 +45,13 @@ local cfg = {
     -- Otherwise fallback to using `<cword>`.
     prepare_rename = true,
     request_timeout = 1500,
+    -- Make an initial `textDocument/rename` request to gather other
+    -- occurences which are edited and use these ranges to preview.
+    -- If disabled only the word under the cursor will have a preview.
     show_other_ocurrences = true,
+    -- Try to infer patterns from the initial `textDocument/rename` request
+    -- and use these to show hopefully better edit previews.
+    use_patterns = true,
     keys = {
         submit = {
             { "n", "<cr>" },
@@ -87,6 +95,7 @@ local cfg = {
 ---@field line integer
 ---@field start_col integer
 ---@field end_col integer
+---@field pattern string?
 
 --- session context
 ---@type Context?
@@ -170,8 +179,9 @@ local function lsp_request_sync(client, method, params, bufnr)
 end
 
 ---@param transaction_id number
+---@param unique_name string
 ---@return lsp.Handler
-local function rename_refs_handler(transaction_id)
+local function rename_refs_handler(transaction_id, unique_name)
     ---@param err lsp.ResponseError?
     ---@param result lsp.WorkspaceEdit?
     return function(err, result)
@@ -206,24 +216,30 @@ local function rename_refs_handler(transaction_id)
             return
         end
 
-        ---@type lsp.Range[]
+        ---@type { range:lsp.Range, pattern:string? }[]
         local editing_ranges = {}
         ---@type lsp.Position
         local pos = C.rename_params.position
         local win_offset = 0
         for _, edit in ipairs(document_edits) do
+            local pattern = nil
+            if cfg.use_patterns and unique_name ~= edit.newText then
+                local escaped = edit.newText:gsub("%%", "%%")
+                pattern = escaped:gsub(unique_name, "%%s")
+            end
+
             local range = edit.range
             assert(range.start.line == range["end"].line)
             if range.start.line ~= pos.line then
                 -- on other line
-                table.insert(editing_ranges, range)
+                table.insert(editing_ranges, { range = range, pattern = pattern })
             elseif pos.character < range.start.character or pos.character >= range["end"].character then
                 -- on same line but not inside the character range
                 if pos.character >= range["end"].character then
                     local len = range["end"].character - range.start.character
                     win_offset = win_offset + len
                 end
-                table.insert(editing_ranges, range)
+                table.insert(editing_ranges, { range = range, pattern = pattern })
             end
         end
 
@@ -243,14 +259,18 @@ local function rename_refs_handler(transaction_id)
 
         -- also show edit in other occurrences
         C.editing_ranges = {}
-        for _, range in ipairs(editing_ranges) do
-            local line = range.start.line
-            local start_col, end_col = range_to_cols(C.client, C.doc_buf, range)
+        for _, e in ipairs(editing_ranges) do
+            local line = e.range.start.line
+            local start_col, end_col = range_to_cols(C.client, C.doc_buf, e.range)
 
+            local new_text = C.new_text
+            if e.pattern then
+                new_text = string.format(e.pattern, new_text)
+            end
             local extmark_id = vim.api.nvim_buf_set_extmark(C.doc_buf, extmark_ns, line, start_col, {
                 end_col = end_col,
                 virt_text_pos = "inline",
-                virt_text = { { C.new_text, cfg.hl.others } },
+                virt_text = { { new_text, cfg.hl.others } },
                 conceal = "",
             })
 
@@ -259,6 +279,7 @@ local function rename_refs_handler(transaction_id)
                 line = line,
                 start_col = start_col,
                 end_col = end_col,
+                pattern = e.pattern,
             })
         end
     end
@@ -362,14 +383,18 @@ function M.rename(opts)
     local rename_params = {
         textDocument = position_params.textDocument,
         position = position_params.position,
-        -- HACK: try to use a unique enough name that
-        -- 1. is different from the current name
-        -- 2. doesn't conflict with other identifiers
-        newName = cword.text ~= "kajshfybcwriwuybqkjh" and "kajshfybcwriwuybqkjh" or "boviutyiiehsihjdlkgh",
+        newName = cword.text,
     }
     if cfg.show_other_ocurrences then
         -- make initial request to receive edit ranges
-        local handler = rename_refs_handler(transaction_id)
+
+        -- HACK: try to use a unique enough name that
+        -- 1. is different from the current name
+        -- 2. doesn't conflict with other identiiers
+        local unique_name = cword.text ~= "kajshfybcwriwuybqkjh" and "kajshfybcwriwuybqkjh" or "boviutyiiehsihjdlkgh"
+
+        rename_params.newName = unique_name
+        local handler = rename_refs_handler(transaction_id, unique_name)
         client.request(lsp_methods.textDocument_rename, rename_params, handler, doc_buf)
     end
 
@@ -462,7 +487,9 @@ function M.rename(opts)
 end
 
 function M.update()
-    assert(C)
+    if C == nil then
+        return
+    end
 
     C.new_text = vim.api.nvim_buf_get_lines(C.float_buf, 0, 1, false)[1]
     local text_width = vim.fn.strdisplaywidth(C.new_text)
@@ -478,11 +505,15 @@ function M.update()
     -- also show edit in other occurrences
     if C.editing_ranges then
         for _, e in ipairs(C.editing_ranges) do
+            local new_text = C.new_text
+            if e.pattern then
+                new_text = string.format(e.pattern, new_text)
+            end
             vim.api.nvim_buf_set_extmark(C.doc_buf, extmark_ns, e.line, e.start_col, {
                 id = e.extmark_id,
                 end_col = e.end_col,
                 virt_text_pos = "inline",
-                virt_text = { { C.new_text, cfg.hl.others } },
+                virt_text = { { new_text, cfg.hl.others } },
                 conceal = "",
             })
         end
@@ -495,33 +526,8 @@ function M.update()
     vim.api.nvim_win_set_width(C.float_win, text_width + 2)
 end
 
-function M.submit()
-    assert(C)
-
-    local mode = vim.api.nvim_get_mode().mode;
-    if mode == "i" then
-        vim.cmd.stopinsert()
-    end
-
-    -- do a sync request to avoid flicker when deleting extmarks
-    C.rename_params.newName = C.new_text
-    local resp = lsp_request_sync(C.client, lsp_methods.textDocument_rename, C.rename_params, C.doc_buf)
-    if resp then
-        local handler = C.client.handlers[lsp_methods.textDocument_rename]
-            or vim.lsp.handlers[lsp_methods.textDocument_rename]
-        handler(resp.err, resp.result, resp.context, resp.config)
-    end
-
-    vim.schedule(M.hide)
-end
-
-function M.hide()
-    local ctx = C
-    if ctx == nil then
-        return
-    end
-    C = nil
-
+---@param ctx Context
+local function hide(ctx)
     vim.wo[ctx.doc_win].conceallevel = ctx.prev_conceallevel
     vim.api.nvim_buf_clear_namespace(ctx.doc_buf, extmark_ns, 0, -1)
 
@@ -532,6 +538,38 @@ function M.hide()
     if vim.api.nvim_buf_is_valid(ctx.float_buf) then
         vim.api.nvim_buf_delete(ctx.float_buf, {})
     end
+end
+
+function M.hide()
+    local ctx = C
+    if ctx then
+        hide(ctx)
+    end
+    C = nil
+end
+
+function M.submit()
+    assert(C)
+    local ctx = C
+    C = nil
+
+    local mode = vim.api.nvim_get_mode().mode;
+    if mode == "i" then
+        vim.cmd.stopinsert()
+    end
+
+    -- do a sync request to avoid flicker when deleting extmarks
+    ctx.rename_params.newName = ctx.new_text
+    local resp = lsp_request_sync(ctx.client, lsp_methods.textDocument_rename, ctx.rename_params, ctx.doc_buf)
+    if resp then
+        local handler = ctx.client.handlers[lsp_methods.textDocument_rename]
+            or vim.lsp.handlers[lsp_methods.textDocument_rename]
+        handler(resp.err, resp.result, resp.context, resp.config)
+    end
+
+    vim.schedule(function()
+        hide(ctx)
+    end)
 end
 
 return M
