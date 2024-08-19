@@ -10,6 +10,7 @@ local buf_hl_ns = vim.api.nvim_create_namespace("user.util.input.buf_hl")
 ---@field prepare_rename boolean
 ---@field request_timeout integer
 ---@field show_other_ocurrences boolean
+---@field use_patterns boolean
 ---@field keys KeysConfig
 ---@field hl HlConfig
 
@@ -25,6 +26,7 @@ local buf_hl_ns = vim.api.nvim_create_namespace("user.util.input.buf_hl")
 ---@field prepare_rename boolean?
 ---@field request_timeout integer?
 ---@field show_other_ocurrences boolean?
+---@field use_patterns boolean?
 ---@field keys live_rename.UserKeysConfig?
 ---@field hl live_rename.UserHlConfig?
 
@@ -43,7 +45,13 @@ local cfg = {
     -- Otherwise fallback to using `<cword>`.
     prepare_rename = true,
     request_timeout = 1500,
+    -- Make an initial `textDocument/rename` request to gather other
+    -- occurences which are edited and use these ranges to preview.
+    -- If disabled only the word under the cursor will have a preview.
     show_other_ocurrences = true,
+    -- Try to infer patterns from the initial `textDocument/rename` request
+    -- and use these to show hopefully better edit previews.
+    use_patterns = true,
     keys = {
         submit = {
             { "n", "<cr>" },
@@ -215,7 +223,7 @@ local function rename_refs_handler(transaction_id, unique_name)
         local win_offset = 0
         for _, edit in ipairs(document_edits) do
             local pattern = nil
-            if unique_name ~= edit.newText then
+            if cfg.use_patterns and unique_name ~= edit.newText then
                 local escaped = edit.newText:gsub("%%", "%%")
                 pattern = escaped:gsub(unique_name, "%%s")
             end
