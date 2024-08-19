@@ -23,6 +23,7 @@ require("live-rename").setup({
     -- Otherwise fallback to using `<cword>`.
     prepare_rename = true,
     request_timeout = 1500,
+    show_other_ocurrences = true,
     keys = {
         submit = {
             { "n", "<cr>" },

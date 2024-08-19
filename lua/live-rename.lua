@@ -9,6 +9,7 @@ local buf_hl_ns = vim.api.nvim_create_namespace("user.util.input.buf_hl")
 ---@class Config
 ---@field prepare_rename boolean
 ---@field request_timeout integer
+---@field show_other_ocurrences boolean
 ---@field keys KeysConfig
 ---@field hl HlConfig
 
@@ -23,6 +24,7 @@ local buf_hl_ns = vim.api.nvim_create_namespace("user.util.input.buf_hl")
 ---@class live_rename.UserConfig
 ---@field prepare_rename boolean?
 ---@field request_timeout integer?
+---@field show_other_ocurrences boolean?
 ---@field keys live_rename.UserKeysConfig?
 ---@field hl live_rename.UserHlConfig?
 
@@ -41,6 +43,7 @@ local cfg = {
     -- Otherwise fallback to using `<cword>`.
     prepare_rename = true,
     request_timeout = 1500,
+    show_other_ocurrences = true,
     keys = {
         submit = {
             { "n", "<cr>" },
@@ -354,9 +357,7 @@ function M.rename(opts)
     local text = opts.text or cword.text
     local text_width = vim.fn.strdisplaywidth(text)
 
-    -- make initial request to receive edit ranges
     local transaction_id = math.random()
-    local handler = rename_refs_handler(transaction_id)
     ---@type lsp.RenameParams
     local rename_params = {
         textDocument = position_params.textDocument,
@@ -366,7 +367,11 @@ function M.rename(opts)
         -- 2. doesn't conflict with other identifiers
         newName = cword.text ~= "kajshfybcwriwuybqkjh" and "kajshfybcwriwuybqkjh" or "boviutyiiehsihjdlkgh",
     }
-    client.request(lsp_methods.textDocument_rename, rename_params, handler, doc_buf)
+    if cfg.show_other_ocurrences then
+        -- make initial request to receive edit ranges
+        local handler = rename_refs_handler(transaction_id)
+        client.request(lsp_methods.textDocument_rename, rename_params, handler, doc_buf)
+    end
 
     -- conceal word in document with spaces, requires at least concealleval=2
     local prev_conceallevel = vim.wo[doc_win].conceallevel
