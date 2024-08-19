@@ -479,7 +479,9 @@ function M.rename(opts)
 end
 
 function M.update()
-    assert(C)
+    if C == nil then
+        return
+    end
 
     C.new_text = vim.api.nvim_buf_get_lines(C.float_buf, 0, 1, false)[1]
     local text_width = vim.fn.strdisplaywidth(C.new_text)
@@ -516,33 +518,8 @@ function M.update()
     vim.api.nvim_win_set_width(C.float_win, text_width + 2)
 end
 
-function M.submit()
-    assert(C)
-
-    local mode = vim.api.nvim_get_mode().mode;
-    if mode == "i" then
-        vim.cmd.stopinsert()
-    end
-
-    -- do a sync request to avoid flicker when deleting extmarks
-    C.rename_params.newName = C.new_text
-    local resp = lsp_request_sync(C.client, lsp_methods.textDocument_rename, C.rename_params, C.doc_buf)
-    if resp then
-        local handler = C.client.handlers[lsp_methods.textDocument_rename]
-            or vim.lsp.handlers[lsp_methods.textDocument_rename]
-        handler(resp.err, resp.result, resp.context, resp.config)
-    end
-
-    vim.schedule(M.hide)
-end
-
-function M.hide()
-    local ctx = C
-    if ctx == nil then
-        return
-    end
-    C = nil
-
+---@param ctx Context
+local function hide(ctx)
     vim.wo[ctx.doc_win].conceallevel = ctx.prev_conceallevel
     vim.api.nvim_buf_clear_namespace(ctx.doc_buf, extmark_ns, 0, -1)
 
@@ -553,6 +530,38 @@ function M.hide()
     if vim.api.nvim_buf_is_valid(ctx.float_buf) then
         vim.api.nvim_buf_delete(ctx.float_buf, {})
     end
+end
+
+function M.hide()
+    local ctx = C
+    if ctx then
+        hide(ctx)
+    end
+    C = nil
+end
+
+function M.submit()
+    assert(C)
+    local ctx = C
+    C = nil
+
+    local mode = vim.api.nvim_get_mode().mode;
+    if mode == "i" then
+        vim.cmd.stopinsert()
+    end
+
+    -- do a sync request to avoid flicker when deleting extmarks
+    ctx.rename_params.newName = ctx.new_text
+    local resp = lsp_request_sync(ctx.client, lsp_methods.textDocument_rename, ctx.rename_params, ctx.doc_buf)
+    if resp then
+        local handler = ctx.client.handlers[lsp_methods.textDocument_rename]
+            or vim.lsp.handlers[lsp_methods.textDocument_rename]
+        handler(resp.err, resp.result, resp.context, resp.config)
+    end
+
+    vim.schedule(function()
+        hide(ctx)
+    end)
 end
 
 return M
