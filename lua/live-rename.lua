@@ -548,16 +548,8 @@ function M.hide()
     C = nil
 end
 
-function M.submit()
-    assert(C)
-    local ctx = C
-    C = nil
-
-    local mode = vim.api.nvim_get_mode().mode;
-    if mode == "i" then
-        vim.cmd.stopinsert()
-    end
-
+---@param ctx Context
+local function submit(ctx)
     -- do a sync request to avoid flicker when deleting extmarks
     ctx.rename_params.newName = ctx.new_text
     local resp = lsp_request_sync(ctx.client, lsp_methods.textDocument_rename, ctx.rename_params, ctx.doc_buf)
@@ -567,9 +559,22 @@ function M.submit()
         handler(resp.err, resp.result, resp.context, resp.config)
     end
 
-    vim.schedule(function()
-        hide(ctx)
-    end)
+    hide(ctx)
+end
+
+function M.submit()
+    local ctx = assert(C)
+    C = nil
+
+    local mode = vim.api.nvim_get_mode().mode;
+    if mode == "i" then
+        vim.cmd.stopinsert()
+        vim.schedule(function()
+            submit(ctx)
+        end)
+    else
+        submit(ctx)
+    end
 end
 
 return M
