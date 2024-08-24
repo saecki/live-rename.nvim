@@ -44,6 +44,8 @@ local cfg = {
     -- determine the word to be renamed, can be slow on some servers.
     -- Otherwise fallback to using `<cword>`.
     prepare_rename = true,
+    --- The timeout for the `textDocument/prepareRename` request and final
+    --- `textDocument/rename` request when submitting.
     request_timeout = 1500,
     -- Make an initial `textDocument/rename` request to gather other
     -- occurences which are edited and use these ranges to preview.
