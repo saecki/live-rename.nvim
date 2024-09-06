@@ -59,7 +59,7 @@ require("live-rename").rename()
 -- start in insert mode and jump to the end of the word
 require("live-rename").rename({ insert = true })
 
--- jump into insert mode and start with an empty word
+-- start in insert mode with an empty word
 require("live-rename").rename({ text = "", insert = true })
 ```
 
