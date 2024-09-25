@@ -231,7 +231,9 @@ local function rename_refs_handler(transaction_id, unique_name)
             end
 
             local range = edit.range
-            assert(range.start.line == range["end"].line)
+            if range.start.line ~= range["end"].line then
+                return
+            end
             if range.start.line ~= pos.line then
                 -- on other line
                 table.insert(editing_ranges, { range = range, pattern = pattern })
