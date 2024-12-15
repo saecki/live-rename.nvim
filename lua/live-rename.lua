@@ -132,7 +132,7 @@ local function notify_error(message, err)
         end
         message = string.format("%s: `%s`", message, err_msg)
     end
-    vim.notify(message, vim.log.levels.ERROR)
+    vim.notify(message, vim.log.levels.ERROR, { title = "live-rename" })
 end
 
 ---@param client vim.lsp.Client
@@ -237,9 +237,9 @@ local function rename_refs_handler(transaction_id, unique_name)
             if range.start.line ~= pos.line then
                 -- on other line
                 table.insert(editing_ranges, { range = range, pattern = pattern })
-            elseif pos.character < range.start.character or pos.character >= range["end"].character then
+            elseif pos.character < range.start.character or pos.character > range["end"].character then
                 -- on same line but not inside the character range
-                if pos.character >= range["end"].character then
+                if pos.character > range["end"].character then
                     local len = range["end"].character - range.start.character
                     win_offset = win_offset + len
                 end
@@ -359,24 +359,26 @@ function M.rename(opts)
 
     -- use <cword> as a fallback
     if not cword then
-        local text = vim.fn.expand("<cword>")
         local old_pos = vim.api.nvim_win_get_cursor(doc_win)
-        cword = {
-            line = old_pos[1] - 1,
-            start_col = old_pos[2],
-            end_col = old_pos[2],
-            text = text,
-        }
 
-        -- search backward and restore cursor position
-        vim.fn.search(text, "bc")
+        -- search backward for next word
+        vim.fn.search("\\w\\+", "bcW")
         local new_pos = vim.api.nvim_win_get_cursor(doc_win)
+        local text = vim.fn.expand("<cword>")
+
+        -- restore cursor position
         vim.api.nvim_win_set_cursor(0, old_pos)
 
-        if new_pos[1] == old_pos[1] then
-            cword.start_col = new_pos[2]
-            cword.end_col = cword.start_col + #text
+        if text == "" or new_pos[1] ~= old_pos[1] then
+            notify_error("[LSP] rename, no word found")
+            return
         end
+        cword = {
+            line = new_pos[1] - 1,
+            start_col = new_pos[2],
+            end_col = new_pos[2] + #text,
+            text = text,
+        }
     end
 
     local text = opts.text or cword.text
