@@ -338,7 +338,7 @@ function M.rename(opts)
                     line = result.range.start.line,
                     start_col = start_col,
                     end_col = end_col,
-                    text = result.placeholder,
+                    text = tostring(result.placeholder),
                 }
             else
                 ---@cast result lsp.Range
