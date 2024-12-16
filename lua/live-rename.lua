@@ -369,7 +369,10 @@ function M.rename(opts)
         -- restore cursor position
         vim.api.nvim_win_set_cursor(0, old_pos)
 
-        if text == "" or new_pos[1] ~= old_pos[1] then
+        local on_same_line = new_pos[1] == old_pos[1]
+        -- we only need to check the end bound since we're searching backwards
+        local in_char_range = new_pos[2] + #text >= old_pos[2]
+        if text == "" or not on_same_line or not in_char_range then
             notify_error("[LSP] rename, no word found")
             return
         end
