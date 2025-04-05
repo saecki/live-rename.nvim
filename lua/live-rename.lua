@@ -71,6 +71,40 @@ local cfg = {
     },
 }
 
+---@class ClientWrapper
+---@field client table<any,any>
+local ClientWrapper = {}
+
+function ClientWrapper:supports_method(...)
+    return self.client.supports_method(...)
+end
+
+function ClientWrapper:request(...)
+    return self.client.request(...)
+end
+
+function ClientWrapper:cancel_request(...)
+    return self.client.cancel_request(...)
+end
+
+function ClientWrapper:__index(key)
+    return ClientWrapper[key] or self.client[key]
+end
+
+function ClientWrapper:__newindex(key, val)
+    self.client[key] = val
+end
+
+---@param client vim.lsp.Client
+---@return vim.lsp.Client
+local function wrap_client(client)
+    if vim.fn.has("nvim-0.11") == 1 then
+        return client
+    end
+
+    return setmetatable({ client = client }, ClientWrapper)
+end
+
 ---@class Context
 ---@field doc_buf integer
 ---@field doc_win integer
@@ -163,7 +197,7 @@ local function lsp_request_sync(client, method, params, bufnr)
         }
     end
 
-    local success, request_id = client.request(method, params, sync_handler, bufnr)
+    local success, request_id = client:request(method, params, sync_handler, bufnr)
     if not success then
         return nil
     end
@@ -174,7 +208,7 @@ local function lsp_request_sync(client, method, params, bufnr)
 
     if not wait_result then
         if request_id then
-            client.cancel_request(request_id)
+            client:cancel_request(request_id)
         end
         return nil
     end
@@ -313,6 +347,7 @@ function M.rename(opts)
         vim.notify("[LSP] rename, no matching server attached")
         return
     end
+    client = wrap_client(client)
 
     ---@type lsp.TextDocumentPositionParams
     local position_params = vim.lsp.util.make_position_params(doc_win, client.offset_encoding)
@@ -320,7 +355,7 @@ function M.rename(opts)
     ---@type CursorWord?
     local cword = nil
     -- get word to rename
-    if cfg.prepare_rename and client.supports_method(lsp_methods.textDocument_prepareRename) then
+    if cfg.prepare_rename and client:supports_method(lsp_methods.textDocument_prepareRename) then
         local resp = lsp_request_sync(client, lsp_methods.textDocument_prepareRename, position_params, doc_buf)
         if not resp or resp.err ~= nil or resp.result == nil then
             if resp and resp.err then
@@ -407,7 +442,7 @@ function M.rename(opts)
 
         rename_params.newName = unique_name
         local handler = rename_refs_handler(transaction_id, unique_name)
-        client.request(lsp_methods.textDocument_rename, rename_params, handler, doc_buf)
+        client:request(lsp_methods.textDocument_rename, rename_params, handler, doc_buf)
     end
 
     -- conceal word in document with spaces, requires at least concealleval=2
