@@ -544,7 +544,10 @@ function M.update()
     end
 
     vim.api.nvim_buf_clear_namespace(C.float_buf, buf_hl_ns, 0, -1)
-    vim.api.nvim_buf_add_highlight(C.float_buf, buf_hl_ns, cfg.hl.current, 0, 0, -1)
+    vim.api.nvim_buf_set_extmark(C.float_buf, buf_hl_ns, 0, 0, {
+        end_col = #C.new_text,
+        hl_group = cfg.hl.current,
+    })
 
     -- avoid line wrapping due to the window being to small
     vim.api.nvim_win_set_width(C.float_win, text_width + 2)
