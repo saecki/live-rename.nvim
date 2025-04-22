@@ -79,6 +79,7 @@ local cfg = {
 ---@field cword CursorWord
 ---@field new_text string
 ---@field extmark_id integer
+---@field opts RenameOpts
 ---
 ---@field client vim.lsp.Client
 ---@field prev_conceallevel integer
@@ -292,6 +293,8 @@ end
 ---@class RenameOpts
 ---@field text string?
 ---@field insert boolean?
+---@field dotrepeat boolean?
+---@field noconfirm boolean?
 
 ---@param opts RenameOpts?
 function M.rename(opts)
@@ -473,9 +476,9 @@ function M.rename(opts)
 
     -- focus and enter insert mode
     vim.api.nvim_set_current_win(float_win)
-    if opts.insert then
-        vim.cmd.startinsert()
-        vim.api.nvim_win_set_cursor(float_win, { 1, text_width })
+
+    if opts.dotrepeat then
+        vim.cmd.normal(".")
     end
 
     ---@type Context
@@ -487,12 +490,24 @@ function M.rename(opts)
         cword = cword,
         new_text = text,
         extmark_id = extmark_id,
+        opts = opts,
 
         client = client,
         prev_conceallevel = prev_conceallevel,
         ref_transaction_id = transaction_id,
         rename_params = rename_params,
     }
+
+    if opts.noconfirm then
+        C.new_text = vim.api.nvim_buf_get_lines(C.float_buf, 0, 1, false)[1]
+        M.submit()
+        return
+    end
+
+    if opts.insert then
+        vim.cmd.startinsert()
+        vim.api.nvim_win_set_cursor(float_win, { 1, text_width })
+    end
 end
 
 function M.update()

@@ -61,6 +61,9 @@ require("live-rename").rename({ insert = true })
 
 -- start in insert mode with an empty word
 require("live-rename").rename({ text = "", insert = true })
+
+-- execute `:normal .` and run the lsp rename without further confirmation
+require("live-rename").rename({ dotrepeat = true, noconfirm = true })
 ```
 
 live-rename includes a `map` function to make creating key mappings more ergonomic.  
