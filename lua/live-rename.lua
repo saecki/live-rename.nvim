@@ -534,8 +534,8 @@ function M.rename(opts)
     }
 
     if opts.noconfirm then
-        C.new_text = vim.api.nvim_buf_get_lines(C.float_buf, 0, 1, false)[1]
-        M.submit()
+        M.update()
+        vim.schedule(M.submit)
         return
     end
 
