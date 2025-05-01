@@ -440,6 +440,12 @@ function M.rename(opts)
         -- 2. doesn't conflict with other identiiers
         local unique_name = cword.text ~= "kajshfybcwriwuybqkjh" and "kajshfybcwriwuybqkjh" or "boviutyiiehsihjdlkgh"
 
+        -- match the casing of the word to be renamed as to not indroduce unwanted side effects
+        -- in some languages, like Go, uppercase identifiers are public
+        if cword.text:sub(1, 1):match("%u") then
+            unique_name = unique_name:sub(1, 1):upper() .. unique_name:sub(2)
+        end
+
         rename_params.newName = unique_name
         local handler = rename_refs_handler(transaction_id, unique_name)
         client:request(lsp_methods.textDocument_rename, rename_params, handler, doc_buf)
