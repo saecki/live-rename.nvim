@@ -507,8 +507,8 @@ function M.rename(opts)
         buffer = float_buf,
         callback = M.update,
     })
-    -- cleanup when window is closed
-    vim.api.nvim_create_autocmd("WinClosed", {
+    -- cleanup when leaving window
+    vim.api.nvim_create_autocmd("WinLeave", {
         group = group,
         buffer = float_buf,
         callback = M.hide,
