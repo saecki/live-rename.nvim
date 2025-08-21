@@ -126,6 +126,8 @@ end
 ---@field line integer
 ---@field start_col integer
 ---@field end_col integer
+-- The initial offset inside the word, when the rename was started.
+---@field initial_offset integer
 
 ---@class EditingRange
 ---@field extmark_id integer
@@ -327,6 +329,11 @@ end
 ---@class RenameOpts
 ---@field text string?
 ---@field insert boolean?
+-- If nil, maintin the cursor position within the word.
+-- If a positive integer, jump to the position.
+-- If a negative integer, jump to the position starting from -1, which
+-- corresponds to the end of the word.
+---@field cursorpos integer?
 ---@field dotrepeat boolean?
 ---@field noconfirm boolean?
 
@@ -351,6 +358,8 @@ function M.rename(opts)
 
     ---@type lsp.TextDocumentPositionParams
     local position_params = vim.lsp.util.make_position_params(doc_win, client.offset_encoding)
+
+    local initial_pos = vim.api.nvim_win_get_cursor(doc_win)
 
     ---@type CursorWord?
     local cword = nil
@@ -377,6 +386,7 @@ function M.rename(opts)
                     start_col = start_col,
                     end_col = end_col,
                     text = tostring(result.placeholder),
+                    initial_offset = initial_pos[2] - start_col,
                 }
             else
                 ---@cast result lsp.Range
@@ -390,6 +400,7 @@ function M.rename(opts)
                     start_col = start_col,
                     end_col = end_col,
                     text = string.sub(lines[1], start_col + 1, end_col),
+                    initial_offset = initial_pos[2] - start_col,
                 }
             end
         end
@@ -397,19 +408,17 @@ function M.rename(opts)
 
     -- use <cword> as a fallback
     if not cword then
-        local old_pos = vim.api.nvim_win_get_cursor(doc_win)
-
         -- search backward for next word
         vim.fn.search("\\w\\+", "bcW")
         local new_pos = vim.api.nvim_win_get_cursor(doc_win)
         local text = vim.fn.expand("<cword>")
 
         -- restore cursor position
-        vim.api.nvim_win_set_cursor(0, old_pos)
+        vim.api.nvim_win_set_cursor(0, initial_pos)
 
-        local on_same_line = new_pos[1] == old_pos[1]
+        local on_same_line = new_pos[1] == initial_pos[1]
         -- we only need to check the end bound since we're searching backwards
-        local in_char_range = new_pos[2] + #text >= old_pos[2]
+        local in_char_range = new_pos[2] + #text >= initial_pos[2]
         if text == "" or not on_same_line or not in_char_range then
             notify_error("[LSP] rename, no word found")
             return
@@ -419,6 +428,7 @@ function M.rename(opts)
             start_col = new_pos[2],
             end_col = new_pos[2] + #text,
             text = text,
+            initial_offset = initial_pos[2] - new_pos[2],
         }
     end
 
@@ -547,8 +557,17 @@ function M.rename(opts)
 
     if opts.insert then
         vim.cmd.startinsert()
-        vim.api.nvim_win_set_cursor(float_win, { 1, text_width })
     end
+
+    local pos = cword.initial_offset
+    if opts.cursorpos then
+        if opts.cursorpos >= 0 then
+            pos = opts.cursorpos
+        else
+            pos = text_width + 1 - opts.cursorpos
+        end
+    end
+    vim.api.nvim_win_set_cursor(float_win, { 1, pos })
 end
 
 function M.update()

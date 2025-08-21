@@ -53,17 +53,20 @@ require("live-rename").setup({
 ## Usage
 
 ```lua
--- start in normal mode and jump to the start of the word
+-- start in normal mode and maintain cursor position.
 require("live-rename").rename()
 
+-- start in normal mode and jump to the start of the word.
+require("live-rename").rename({ cursorpos = 0 })
+
 -- start in insert mode and jump to the end of the word
-require("live-rename").rename({ insert = true })
+require("live-rename").rename({ insert = true, cursorpos = -1 })
 
 -- start in insert mode with an empty word
 require("live-rename").rename({ text = "", insert = true })
 
 -- execute `:normal .` and run the lsp rename without further confirmation
-require("live-rename").rename({ dotrepeat = true, noconfirm = true })
+require("live-rename").rename({ dotrepeat = true, noconfirm = true, cursorpos = 0 })
 ```
 
 live-rename includes a `map` function to make creating key mappings more ergonomic.  
