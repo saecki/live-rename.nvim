@@ -83,3 +83,8 @@ vim.keymap.set("n", "<leader>r", live_rename.map({}), { desc = "LSP rename" })
 vim.keymap.set("n", "<leader>R", live_rename.map({ text = "", insert = true }), { desc = "LSP rename" })
 vim.keymap.set("n", "<leader>R", function() live_rename.rename({ text = "", insert = true }) end, { desc = "LSP rename" })
 ```
+
+## Related
+- [inc-rename.nvim](https://github.com/smjonas/inc-rename.nvim) is a similar plugin that implements the live preview using
+  `inccommand`, while `live-rename.nvim` does so using extmarks and a floating window. The latter approach allows modal editing
+  as if directly inside the buffer.
