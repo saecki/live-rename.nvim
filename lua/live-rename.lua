@@ -564,7 +564,7 @@ function M.rename(opts)
         if opts.cursorpos >= 0 then
             pos = opts.cursorpos
         else
-            pos = text_width + 1 - opts.cursorpos
+            pos = text_width + 1 + opts.cursorpos
         end
     end
     vim.api.nvim_win_set_cursor(float_win, { 1, pos })
