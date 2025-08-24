@@ -157,6 +157,29 @@ function M.map(opts)
     end
 end
 
+-- Rename options used once by the operatorfunc.
+---@type {opts:RenameOpts?}?
+local mapped_opts = nil
+
+---@param opts RenameOpts?
+---@return fun(): string
+function M.map_expr(opts)
+    return function()
+        mapped_opts = { opts = opts }
+        vim.go.operatorfunc = "v:lua.require'live-rename'.rename_operatorfunc"
+        return "g@l"
+    end
+end
+
+function M.rename_operatorfunc()
+    if mapped_opts then
+        M.rename(mapped_opts.opts)
+        mapped_opts = nil
+    else
+        M.rename({ macrorepeat = true, noconfirm = true })
+    end
+end
+
 ---@param message string
 ---@param err any?
 local function notify_error(message, err)

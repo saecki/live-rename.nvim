@@ -83,14 +83,24 @@ The options accepted are the same as for `rename`.
 ```lua
 local live_rename = require("live-rename")
 
--- the following are equivalent
+-- The following are equivalent
 vim.keymap.set("n", "<leader>r", live_rename.rename, { desc = "LSP rename" })
 vim.keymap.set("n", "<leader>r", live_rename.map(), { desc = "LSP rename" })
 vim.keymap.set("n", "<leader>r", live_rename.map({}), { desc = "LSP rename" })
 
--- the following are equivalent
+-- The following are equivalent
 vim.keymap.set("n", "<leader>R", live_rename.map({ text = "", insert = true }), { desc = "LSP rename" })
 vim.keymap.set("n", "<leader>R", function() live_rename.rename({ text = "", insert = true }) end, { desc = "LSP rename" })
+```
+
+Additionally live-rename includes a `map_expr` function, that allows using `.` to
+repeat the last rename. Key mappings using this function *MUST* set the `expr` option.
+```lua
+local live_rename = require("live-rename")
+
+-- These key mappings can be be repeated.
+vim.keymap.set("n", "<leader>r", live_rename.map_expr(), { desc = "LSP rename", expr = true })
+vim.keymap.set("n", "<leader>R", live_rename.map_expr({ macrorepeat = true }), { desc = "LSP rename", expr = true })
 ```
 
 ## Related
