@@ -54,6 +54,10 @@ local cfg = {
     -- Try to infer patterns from the initial `textDocument/rename` request
     -- and use these to show hopefully better edit previews.
     use_patterns = true,
+    -- The register which is used to temporarily record a macro into. This
+    -- macro can then be executed on other symbols using the `macrorepeat`
+    -- rename option.
+    scratch_register = "l",
     keys = {
         submit = {
             { "n", "<cr>" },
@@ -326,6 +330,26 @@ local function rename_refs_handler(transaction_id, unique_name)
     end
 end
 
+---@param buf integer
+local function remove_key_mappings(buf)
+    for _, k in ipairs(cfg.keys.submit) do
+        vim.keymap.del(k[1], k[2], { buffer = buf })
+    end
+    for _, k in ipairs(cfg.keys.cancel) do
+        vim.keymap.del(k[1], k[2], { buffer = buf })
+    end
+end
+
+---@param buf integer
+local function setup_key_mappings(buf)
+    for _, k in ipairs(cfg.keys.submit) do
+        vim.keymap.set(k[1], k[2], M.submit, { buffer = buf, desc = "Submit rename" })
+    end
+    for _, k in ipairs(cfg.keys.cancel) do
+        vim.keymap.set(k[1], k[2], M.hide, { buffer = buf, desc = "Cancel rename" })
+    end
+end
+
 ---@class RenameOpts
 ---@field text string?
 ---@field insert boolean?
@@ -334,7 +358,7 @@ end
 -- If a negative integer, jump to the position starting from -1, which
 -- corresponds to the end of the word.
 ---@field cursorpos integer?
----@field dotrepeat boolean?
+---@field macrorepeat boolean?
 ---@field noconfirm boolean?
 
 ---@param opts RenameOpts?
@@ -503,12 +527,7 @@ function M.rename(opts)
     vim.api.nvim_win_set_hl_ns(float_win, win_hl_ns)
 
     -- key mappings
-    for _, k in ipairs(cfg.keys.submit) do
-        vim.keymap.set(k[1], k[2], M.submit, { buffer = float_buf, desc = "Submit rename" })
-    end
-    for _, k in ipairs(cfg.keys.cancel) do
-        vim.keymap.set(k[1], k[2], M.hide, { buffer = float_buf, desc = "Cancel rename" })
-    end
+    setup_key_mappings(float_buf)
 
     local group = vim.api.nvim_create_augroup("live-rename", {})
     -- update when input changes
@@ -528,10 +547,6 @@ function M.rename(opts)
     -- focus and enter insert mode
     vim.api.nvim_set_current_win(float_win)
 
-    if opts.dotrepeat then
-        vim.cmd.normal(".")
-    end
-
     ---@type Context
     C = {
         doc_buf = doc_buf,
@@ -549,12 +564,6 @@ function M.rename(opts)
         rename_params = rename_params,
     }
 
-    if opts.noconfirm then
-        M.update()
-        vim.schedule(M.submit)
-        return
-    end
-
     if opts.insert then
         vim.cmd.startinsert()
     end
@@ -568,6 +577,95 @@ function M.rename(opts)
         end
     end
     vim.api.nvim_win_set_cursor(float_win, { 1, pos })
+
+    -- TODO: is this schedule actually needed?
+    vim.schedule(function()
+        local append = false
+        if opts.macrorepeat then
+            append = true
+            M.run_macro(float_buf)
+        end
+
+        if opts.noconfirm then
+            M.update()
+            vim.schedule(M.submit)
+            return
+        end
+
+        M.start_recording_macro(float_buf, { append = append })
+    end)
+end
+
+---@type string?
+local recorded_macro = nil
+local recording = false
+
+-- Run any action with plugin key mappings for cancelling or submitting the
+-- current rename session unbound.
+---@param float_buf integer
+---@param action fun()
+local function with_keys_unbound(float_buf, action)
+    remove_key_mappings(float_buf)
+    action()
+    setup_key_mappings(float_buf)
+end
+
+---@param float_buf integer
+---@param opts {append:boolean}
+function M.start_recording_macro(float_buf, opts)
+    if recording then
+        return
+    end
+
+    local register = cfg.scratch_register
+    if opts.append then
+        -- uppercase register name to append to it
+        register = cfg.scratch_register:upper()
+    end
+
+    with_keys_unbound(float_buf, function()
+        vim.cmd.normal("q" .. register)
+    end)
+
+    recording = true
+end
+
+---@param float_buf integer
+---@param save boolean
+---@param from_insert boolean
+function M.stop_recording_macro(float_buf, save, from_insert)
+    if not recording then
+        return
+    end
+
+    with_keys_unbound(float_buf, function()
+        vim.cmd.normal("q")
+    end)
+
+    if save then
+        recorded_macro = vim.fn.getreg(cfg.scratch_register)
+        if vim.endswith(recorded_macro, "\r") then
+            recorded_macro = string.sub(recorded_macro, 1, -2)
+        end
+        if from_insert then
+            -- If the user submitted in insert mode append an `<esc>`
+            -- to fixup the macro.
+            recorded_macro = recorded_macro .. "\27"
+        end
+    end
+
+    recording = false
+end
+
+---@param float_buf integer
+function M.run_macro(float_buf)
+    if recorded_macro then
+        local register = cfg.scratch_register
+        vim.fn.setreg(register, recorded_macro)
+        with_keys_unbound(float_buf, function()
+            vim.cmd.normal("@" .. register)
+        end)
+    end
 end
 
 function M.update()
@@ -613,6 +711,19 @@ function M.update()
     vim.api.nvim_win_set_width(C.float_win, text_width + 2)
 end
 
+---@param callback fun(boolean)
+local function with_leave_insert(callback)
+    local mode = vim.api.nvim_get_mode().mode;
+    if mode == "i" then
+        vim.cmd.stopinsert()
+        vim.schedule(function()
+            callback(true)
+        end)
+    else
+        callback(false)
+    end
+end
+
 ---@param ctx Context
 local function hide(ctx)
     vim.wo[ctx.doc_win].conceallevel = ctx.prev_conceallevel
@@ -630,7 +741,10 @@ end
 function M.hide()
     local ctx = C
     if ctx then
-        hide(ctx)
+        with_leave_insert(function(from_insert)
+            M.stop_recording_macro(ctx.float_buf, false, from_insert)
+            hide(ctx)
+        end)
     end
     C = nil
 end
@@ -653,15 +767,10 @@ function M.submit()
     local ctx = assert(C)
     C = nil
 
-    local mode = vim.api.nvim_get_mode().mode;
-    if mode == "i" then
-        vim.cmd.stopinsert()
-        vim.schedule(function()
-            submit(ctx)
-        end)
-    else
+    with_leave_insert(function(from_insert)
+        M.stop_recording_macro(ctx.float_buf, true, from_insert)
         submit(ctx)
-    end
+    end)
 end
 
 return M
