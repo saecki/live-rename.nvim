@@ -157,29 +157,6 @@ function M.map(opts)
     end
 end
 
--- Rename options used once by the operatorfunc.
----@type {opts:RenameOpts?}?
-local mapped_opts = nil
-
----@param opts RenameOpts?
----@return fun(): string
-function M.map_expr(opts)
-    return function()
-        mapped_opts = { opts = opts }
-        vim.go.operatorfunc = "v:lua.require'live-rename'.rename_operatorfunc"
-        return "g@l"
-    end
-end
-
-function M.rename_operatorfunc()
-    if mapped_opts then
-        M.rename(mapped_opts.opts)
-        mapped_opts = nil
-    else
-        M.rename({ macrorepeat = true, noconfirm = true })
-    end
-end
-
 ---@param message string
 ---@param err any?
 local function notify_error(message, err)
@@ -384,10 +361,8 @@ end
 ---@field macrorepeat boolean?
 ---@field noconfirm boolean?
 
----@param opts RenameOpts?
-function M.rename(opts)
-    opts = opts or {}
-
+---@param opts RenameOpts
+local function rename(opts)
     local doc_buf = vim.api.nvim_get_current_buf()
     local doc_win = vim.api.nvim_get_current_win()
 
@@ -619,6 +594,24 @@ function M.rename(opts)
     end)
 end
 
+
+-- Rename options used once by the operatorfunc.
+---@type RenameOpts?
+local last_opts = nil
+
+function M.rename_operatorfunc()
+    local opts = vim.deepcopy(last_opts or {})
+    opts.macrorepeat = true
+    opts.noconfirm = true
+    rename(opts)
+end
+
+---@param opts RenameOpts?
+function M.rename(opts)
+    last_opts = opts or {}
+    rename(opts or {})
+end
+
 ---@type string?
 local recorded_macro = nil
 local recording = false
@@ -782,6 +775,11 @@ local function submit(ctx)
             or vim.lsp.handlers[lsp_methods.textDocument_rename]
         handler(resp.err, resp.result, resp.context, resp.config)
     end
+
+    -- Make the rename dot-repeatable
+    vim.go.operatorfunc = "{->''}"
+    vim.cmd.normal("g@l")
+    vim.go.operatorfunc = "v:lua.require'live-rename'.rename_operatorfunc"
 
     hide(ctx)
 end

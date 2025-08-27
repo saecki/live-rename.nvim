@@ -70,8 +70,10 @@ require("live-rename").rename({ insert = true, cursorpos = -1 })
 require("live-rename").rename({ text = "", insert = true })
 
 -- The actions that happened in the previous rename window are recorded as a macro.
--- This macro is executed on the new word and the lsp rename is commited without
--- any further confirmation.
+-- The rename can be repeated by using `.`, or by manually calling the rename
+-- funciton with the `macrorepeat` parameter.
+
+-- The last lsp rename is repeated and commited without any further confirmation.
 require("live-rename").rename({ macrorepeat = true, noconfirm = true })
 
 -- Without `noconfirm` additional actions can be appended to the macro.
@@ -91,16 +93,6 @@ vim.keymap.set("n", "<leader>r", live_rename.map({}), { desc = "LSP rename" })
 -- The following are equivalent
 vim.keymap.set("n", "<leader>R", live_rename.map({ text = "", insert = true }), { desc = "LSP rename" })
 vim.keymap.set("n", "<leader>R", function() live_rename.rename({ text = "", insert = true }) end, { desc = "LSP rename" })
-```
-
-Additionally live-rename includes a `map_expr` function, that allows using `.` to
-repeat the last rename. Key mappings using this function *MUST* set the `expr` option.
-```lua
-local live_rename = require("live-rename")
-
--- These key mappings can be be repeated.
-vim.keymap.set("n", "<leader>r", live_rename.map_expr(), { desc = "LSP rename", expr = true })
-vim.keymap.set("n", "<leader>R", live_rename.map_expr({ macrorepeat = true }), { desc = "LSP rename", expr = true })
 ```
 
 ## Related
