@@ -32,6 +32,10 @@ require("live-rename").setup({
     -- Try to infer patterns from the initial `textDocument/rename` request
     -- and use these to show hopefully better edit previews.
     use_patterns = true,
+    -- The register which is used to temporarily record a macro into. This
+    -- macro can then be executed on other symbols using the `macrorepeat`
+    -- rename option.
+    scratch_register = "l",
     keys = {
         submit = {
             { "n", "<cr>" },
@@ -53,20 +57,27 @@ require("live-rename").setup({
 ## Usage
 
 ```lua
--- start in normal mode and maintain cursor position.
+-- Start in normal mode and maintain cursor position.
 require("live-rename").rename()
 
--- start in normal mode and jump to the start of the word.
+-- Start in normal mode and jump to the start of the word.
 require("live-rename").rename({ cursorpos = 0 })
 
--- start in insert mode and jump to the end of the word
+-- Start in insert mode and jump to the end of the word
 require("live-rename").rename({ insert = true, cursorpos = -1 })
 
--- start in insert mode with an empty word
+-- Start in insert mode with an empty word
 require("live-rename").rename({ text = "", insert = true })
 
--- execute `:normal .` and run the lsp rename without further confirmation
-require("live-rename").rename({ dotrepeat = true, noconfirm = true, cursorpos = 0 })
+-- The actions that happened in the previous rename window are recorded as a macro.
+-- The rename can be repeated by using `.`, or by manually calling the rename
+-- funciton with the `macrorepeat` parameter.
+
+-- The last lsp rename is repeated and commited without any further confirmation.
+require("live-rename").rename({ macrorepeat = true, noconfirm = true })
+
+-- Without `noconfirm` additional actions can be appended to the macro.
+require("live-rename").rename({ macrorepeat = true })
 ```
 
 live-rename includes a `map` function to make creating key mappings more ergonomic.  
@@ -74,12 +85,12 @@ The options accepted are the same as for `rename`.
 ```lua
 local live_rename = require("live-rename")
 
--- the following are equivalent
+-- The following are equivalent
 vim.keymap.set("n", "<leader>r", live_rename.rename, { desc = "LSP rename" })
 vim.keymap.set("n", "<leader>r", live_rename.map(), { desc = "LSP rename" })
 vim.keymap.set("n", "<leader>r", live_rename.map({}), { desc = "LSP rename" })
 
--- the following are equivalent
+-- The following are equivalent
 vim.keymap.set("n", "<leader>R", live_rename.map({ text = "", insert = true }), { desc = "LSP rename" })
 vim.keymap.set("n", "<leader>R", function() live_rename.rename({ text = "", insert = true }) end, { desc = "LSP rename" })
 ```
