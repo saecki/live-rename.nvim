@@ -395,36 +395,36 @@ local function rename(opts)
                 notify_error("[LSP] rename, invalid position")
             end
             return
+        end
+
+        ---@type lsp.PrepareRenameResult
+        local result = resp.result
+
+        if result.defaultBehavior then
+            -- fallback
+        elseif result.range then
+            local start_col, end_col = range_to_cols(client, doc_buf, result.range)
+            cword = {
+                line = result.range.start.line,
+                start_col = start_col,
+                end_col = end_col,
+                text = tostring(result.placeholder),
+                initial_offset = initial_pos[2] - start_col,
+            }
         else
-            ---@type lsp.PrepareRenameResult
-            local result = resp.result
+            ---@cast result lsp.Range
+            local range = result
+            local line = range.start.line
+            local lines = vim.api.nvim_buf_get_lines(doc_buf, line, line + 1, true)
+            local start_col, end_col = range_to_cols(client, doc_buf, range)
 
-            if result.defaultBehavior then
-                -- fallback
-            elseif result.range then
-                local start_col, end_col = range_to_cols(client, doc_buf, result.range)
-                cword = {
-                    line = result.range.start.line,
-                    start_col = start_col,
-                    end_col = end_col,
-                    text = tostring(result.placeholder),
-                    initial_offset = initial_pos[2] - start_col,
-                }
-            else
-                ---@cast result lsp.Range
-                local range = result
-                local line = range.start.line
-                local lines = vim.api.nvim_buf_get_lines(doc_buf, line, line + 1, true)
-                local start_col, end_col = range_to_cols(client, doc_buf, range)
-
-                cword = {
-                    line = line,
-                    start_col = start_col,
-                    end_col = end_col,
-                    text = string.sub(lines[1], start_col + 1, end_col),
-                    initial_offset = initial_pos[2] - start_col,
-                }
-            end
+            cword = {
+                line = line,
+                start_col = start_col,
+                end_col = end_col,
+                text = string.sub(lines[1], start_col + 1, end_col),
+                initial_offset = initial_pos[2] - start_col,
+            }
         end
     end
 
