@@ -75,40 +75,6 @@ local cfg = {
     },
 }
 
----@class ClientWrapper
----@field client table<any,any>
-local ClientWrapper = {}
-
-function ClientWrapper:supports_method(...)
-    return self.client.supports_method(...)
-end
-
-function ClientWrapper:request(...)
-    return self.client.request(...)
-end
-
-function ClientWrapper:cancel_request(...)
-    return self.client.cancel_request(...)
-end
-
-function ClientWrapper:__index(key)
-    return ClientWrapper[key] or self.client[key]
-end
-
-function ClientWrapper:__newindex(key, val)
-    self.client[key] = val
-end
-
----@param client vim.lsp.Client
----@return vim.lsp.Client
-local function wrap_client(client)
-    if vim.fn.has("nvim-0.11") == 1 then
-        return client
-    end
-
-    return setmetatable({ client = client }, ClientWrapper)
-end
-
 ---@class Context
 ---@field doc_buf integer
 ---@field doc_win integer
@@ -376,7 +342,6 @@ local function rename(opts)
         vim.notify("[LSP] rename, no matching server attached")
         return
     end
-    client = wrap_client(client)
 
     ---@type lsp.TextDocumentPositionParams
     local position_params = vim.lsp.util.make_position_params(doc_win, client.offset_encoding)
