@@ -147,9 +147,8 @@ end
 ---@param range lsp.Range
 ---@return integer, integer
 local function range_to_cols(client, buf, range)
-    local start_col = vim.lsp.util._get_line_byte_from_position(buf, range.start, client.offset_encoding)
-    local end_col = vim.lsp.util._get_line_byte_from_position(buf, range["end"], client.offset_encoding)
-    return start_col, end_col
+    local r = vim.range.lsp(buf, range, client.offset_encoding)
+    return r.start_col, r.end_col
 end
 
 --- slightly modified from `vim.lsp.client.lua`
